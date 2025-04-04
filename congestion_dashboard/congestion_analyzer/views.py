@@ -4,7 +4,7 @@ from django.db.models import Sum, Count, Avg
 from django.utils import timezone
 import pandas as pd
 import json
-import pprint  # Import pretty print for better formatting
+import pprint
 
 def index(request):
     """
@@ -62,6 +62,29 @@ def index(request):
         region_data = region_data.sort_values('count', ascending=False)
         region_data = region_data.to_dict('records')
         
+        # NEW: Add region time analysis - traffic by hour for each region
+        region_hour_data = entries_data.groupby(['detection_region', 'hour_of_day'])['crz_entries'].sum().reset_index()
+        region_hour_pivot = region_hour_data.pivot(index='hour_of_day', columns='detection_region', values='crz_entries')
+        region_hour_pivot = region_hour_pivot.fillna(0)
+        
+        # Convert the pivot table to a format suitable for Chart.js
+        region_hours_labels = region_hour_pivot.index.tolist()
+        region_names = region_hour_pivot.columns.tolist()
+        region_hour_series = []
+        
+        # Create a dataset for each region
+        for region in region_names:
+            region_hour_series.append({
+                'region': region,
+                'data': region_hour_pivot[region].tolist()
+            })
+        
+        # NEW: Entry point comparison data
+        entry_point_data = {
+            'labels': [item['detection_region'] for item in region_data],
+            'counts': [item['count'] for item in region_data]
+        }
+        
         # Get unique vehicle classes for filter dropdown
         vehicle_classes = entries_data['vehicle_class'].unique().tolist()
     else:
@@ -71,16 +94,26 @@ def index(request):
         hour_data = []
         region_data = []
         vehicle_classes = []
+        region_hour_series = []
+        region_hours_labels = []
+        entry_point_data = {'labels': [], 'counts': []}
     
     # Current time for the dashboard refresh indicator
     current_time = timezone.now()
     
+    # Calculate total traffic volume
+    total_volume = sum(item['count'] for item in region_data) if region_data else 0
+    
     context = {
         'total_entries': total_entries,
+        'total_volume': total_volume,
         'vehicle_class_data': vehicle_class_data,
         'day_of_week_data': day_of_week_data,
         'hour_data': hour_data,
         'region_data': region_data,
+        'region_hour_series': json.dumps(region_hour_series),
+        'region_hours_labels': json.dumps(region_hours_labels),
+        'entry_point_data': json.dumps(entry_point_data),
         'current_time': current_time,
         'vehicle_classes': vehicle_classes,
         'selected_vehicle': vehicle_filter,

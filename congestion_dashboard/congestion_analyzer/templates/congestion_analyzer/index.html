@@ -49,8 +49,35 @@
             </div>
         </div>
 
-        <!-- Summary Statistics -->
-        <!-- Add this inside the container div, after the opening tag -->
+        <!-- Summary Statistics Cards -->
+        <div class="row mt-4 mb-4">
+            <div class="col-md-4">
+                <div class="card stat-card">
+                    <div class="card-body">
+                        <div class="stat-number">{{ total_entries }}</div>
+                        <div class="stat-label">Total Records</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card stat-card">
+                    <div class="card-body">
+                        <div class="stat-number">{{ total_volume }}</div>
+                        <div class="stat-label">Total Vehicle Entries</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card stat-card">
+                    <div class="card-body">
+                        <div class="stat-number">{{ region_data|length }}</div>
+                        <div class="stat-label">Entry Points</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filter Options -->
         <div class="row mb-4">
             <div class="col-12">
                 <div class="card">
@@ -85,37 +112,98 @@
             </div>
         </div>
 
-    <!-- Add this row after the Vehicle Class and Day of Week charts -->
-    <!-- Add this after the filter options card and before the Hour/Region charts -->
-    <div class="row mt-4">
-        <!-- Traffic by Vehicle Class -->
-        <div class="col-md-6">
-            <div class="card">
-                <div class="card-header">
-                    Traffic by Vehicle Class
+        <!-- Vehicle Class and Day of Week Charts -->
+        <div class="row mt-4">
+            <!-- Traffic by Vehicle Class -->
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        Traffic by Vehicle Class
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="vehicleClassChart"></canvas>
+                        </div>
+                    </div>
                 </div>
-                <div class="card-body">
-                    <div class="chart-container">
-                        <canvas id="vehicleClassChart"></canvas>
+            </div>
+
+            <!-- Traffic by Day of Week -->
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        Traffic by Day of Week
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="dayOfWeekChart"></canvas>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Traffic by Day of Week -->
-        <div class="col-md-6">
-            <div class="card">
-                <div class="card-header">
-                    Traffic by Day of Week
+        <!-- Hour of Day and Region Charts -->
+        <div class="row mt-4">
+            <!-- Traffic by Hour of Day -->
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        Traffic by Hour of Day
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="hourOfDayChart"></canvas>
+                        </div>
+                    </div>
                 </div>
-                <div class="card-body">
-                    <div class="chart-container">
-                        <canvas id="dayOfWeekChart"></canvas>
+            </div>
+
+            <!-- Traffic by Region -->
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        Traffic by Region
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="regionChart"></canvas>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
-    </div>
+
+        <!-- Entry Point Charts -->
+        <div class="row mt-4">
+            <!-- Entry Points Comparison -->
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        Traffic by Entry Point
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="entryPointChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Entry Points by Hour -->
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        Entry Points by Hour
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="entryPointHourChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
 
     <!-- Chart initialization scripts -->
     <script>
@@ -217,6 +305,95 @@
                         y: {
                             beginAtZero: true
                         }
+                    }
+                }
+            });
+
+            // Entry Point Chart
+            const entryPointCtx = document.getElementById('entryPointChart').getContext('2d');
+            const entryPointData = JSON.parse('{{ entry_point_data|escapejs }}');
+            const entryPointChart = new Chart(entryPointCtx, {
+                type: 'bar',
+                data: {
+                    labels: entryPointData.labels,
+                    datasets: [{
+                        label: 'Traffic Volume',
+                        data: entryPointData.counts,
+                        backgroundColor: 'rgba(255, 159, 64, 0.7)',
+                        borderColor: 'rgba(255, 159, 64, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    indexAxis: 'y',
+                    scales: {
+                        x: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+
+            // Entry Point by Hour Chart
+            const entryPointHourCtx = document.getElementById('entryPointHourChart').getContext('2d');
+            const regionHoursSeries = JSON.parse('{{ region_hour_series|escapejs }}');
+            const regionHoursLabels = JSON.parse('{{ region_hours_labels|escapejs }}');
+
+            const datasets = regionHoursSeries.map((series, index) => {
+                // Generate a color based on index
+                const hue = (index * 137) % 360;
+                const color = `hsl(${hue}, 70%, 60%)`;
+                
+                return {
+                    label: series.region,
+                    data: series.data,
+                    borderColor: color,
+                    backgroundColor: `${color}33`,
+                    borderWidth: 2,
+                    fill: false,
+                    tension: 0.1
+                };
+            });
+
+            const entryPointHourChart = new Chart(entryPointHourCtx, {
+                type: 'line',
+                data: {
+                    labels: regionHoursLabels.map(hour => `${hour}:00`),
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Number of Entries'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Hour of Day'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                        }
+                    },
+                    interaction: {
+                        mode: 'nearest',
+                        axis: 'x',
+                        intersect: false
                     }
                 }
             });
