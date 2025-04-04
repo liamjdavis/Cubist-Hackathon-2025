@@ -1,0 +1,4 @@
+django
+perspective-python
+pandas 
+pyarrow

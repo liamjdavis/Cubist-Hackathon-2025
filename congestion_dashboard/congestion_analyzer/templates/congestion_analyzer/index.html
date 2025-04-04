@@ -50,72 +50,67 @@
         </div>
 
         <!-- Summary Statistics -->
+        <!-- Add this inside the container div, after the opening tag -->
         <div class="row mb-4">
-            <div class="col-md-4">
-                <div class="card stat-card">
-                    <div class="stat-number">{{ total_entries }}</div>
-                    <div class="stat-label">Total Vehicle Entries</div>
-                </div>
-            </div>
-            <!-- More stat cards can be added here -->
-        </div>
-
-        <!-- Charts Row -->
-        <div class="row">
-            <!-- Vehicle Class Distribution -->
-            <div class="col-md-6">
+            <div class="col-12">
                 <div class="card">
                     <div class="card-header">
-                        Vehicle Class Distribution
+                        Filter Options
                     </div>
                     <div class="card-body">
-                        <div class="chart-container">
-                            <canvas id="vehicleClassChart"></canvas>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Traffic by Day of Week -->
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header">
-                        Traffic by Day of Week
-                    </div>
-                    <div class="card-body">
-                        <div class="chart-container">
-                            <canvas id="dayOfWeekChart"></canvas>
-                        </div>
+                        <form method="get" class="row g-3">
+                            <div class="col-md-4">
+                                <label for="vehicle_class" class="form-label">Vehicle Class</label>
+                                <select class="form-select" id="vehicle_class" name="vehicle_class">
+                                    <option value="">All Vehicle Classes</option>
+                                    {% for class in vehicle_classes %}
+                                    <option value="{{ class }}" {% if selected_vehicle == class %}selected{% endif %}>{{ class }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="start_date" class="form-label">Start Date</label>
+                                <input type="date" class="form-control" id="start_date" name="start_date" value="{{ start_date }}">
+                            </div>
+                            <div class="col-md-3">
+                                <label for="end_date" class="form-label">End Date</label>
+                                <input type="date" class="form-control" id="end_date" name="end_date" value="{{ end_date }}">
+                            </div>
+                            <div class="col-md-2 d-flex align-items-end">
+                                <button type="submit" class="btn btn-primary w-100">Apply Filters</button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             </div>
         </div>
 
-        <div class="row mt-4">
-            <!-- Traffic by Hour of Day -->
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header">
-                        Traffic by Hour of Day
-                    </div>
-                    <div class="card-body">
-                        <div class="chart-container">
-                            <canvas id="hourOfDayChart"></canvas>
-                        </div>
+    <!-- Add this row after the Vehicle Class and Day of Week charts -->
+    <!-- Add this after the filter options card and before the Hour/Region charts -->
+    <div class="row mt-4">
+        <!-- Traffic by Vehicle Class -->
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    Traffic by Vehicle Class
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="vehicleClassChart"></canvas>
                     </div>
                 </div>
             </div>
+        </div>
 
-            <!-- Traffic by Region -->
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header">
-                        Traffic by Detection Region
-                    </div>
-                    <div class="card-body">
-                        <div class="chart-container">
-                            <canvas id="regionChart"></canvas>
-                        </div>
+        <!-- Traffic by Day of Week -->
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    Traffic by Day of Week
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="dayOfWeekChart"></canvas>
                     </div>
                 </div>
             </div>
