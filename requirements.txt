@@ -2,3 +2,4 @@ django
 perspective-python
 pandas 
 pyarrow
+panel

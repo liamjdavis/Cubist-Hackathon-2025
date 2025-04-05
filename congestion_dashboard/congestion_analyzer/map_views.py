@@ -81,7 +81,7 @@ def map(request):
             if 'vehicle_class' in df.columns:
                 df['vehicle_type'] = df['vehicle_class'].map(vehicle_class_mapping)
                 # If mapping fails, keep original value
-                df['vehicle_type'].fillna(df['vehicle_class'], inplace=True)
+                df['vehicle_type'] = df['vehicle_type'].fillna(df['vehicle_class'])
             
             # Aggregate data by location and vehicle type
             location_data = df.groupby(['detection_region', 'vehicle_type', 'lat', 'lng']).agg({
