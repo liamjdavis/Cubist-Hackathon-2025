@@ -2,8 +2,6 @@
 
 A comprehensive visualization and analysis tool for monitoring and analyzing traffic patterns in Manhattan's Congestion Pricing Zone. This tool provides both historical analysis and real-time monitoring capabilities to help understand and manage traffic congestion in New York City.
 
-![New York City](images/pexels-javaistan-18941949.jpg)
-
 ## Features
 
 ### Historical Analysis
@@ -11,8 +9,6 @@ A comprehensive visualization and analysis tool for monitoring and analyzing tra
 - **Data Visualization**: Analyze vehicle entries by type at major entry points
 - **Time-based Analysis**: Filter and examine data across different time periods
 - **Vehicle Type Breakdown**: Detailed analysis of different vehicle categories
-
-![Traffic Cams](images/traffic_CAMERA-3516168497.jpg)
 
 ### Real-time Monitoring
 - **Live Traffic Heatmap**: Real-time visualization of congestion patterns
@@ -141,8 +137,6 @@ This tool was developed to address the critical need for data-driven insights in
 - **Performance Measurement**: Evaluate the effectiveness of congestion pricing policies through quantifiable metrics
 
 The tool serves multiple stakeholders including transportation planners, city officials, researchers, and the general public by transforming complex traffic data into actionable intelligence. By revealing both obvious and subtle patterns in traffic behavior, it provides crucial insights for optimizing traffic flow, reducing congestion, and evaluating the environmental and economic impacts of congestion pricing initiatives.
-
-![Historic New York](images/new-york-city-1979-1.jpg)
 
 ## Future Improvements
 
