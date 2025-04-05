@@ -8,6 +8,6 @@ shapely
 matplotlib
 numpy
 requests
-sseclient-
+sseclient-py
 httpx
 pydantic
