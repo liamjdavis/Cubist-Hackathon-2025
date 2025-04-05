@@ -3,3 +3,4 @@ perspective-python
 pandas 
 pyarrow
 panel
+shapely
