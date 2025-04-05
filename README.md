@@ -37,6 +37,7 @@ graph TD
         UI[User Interface]
         Map[Map Visualization]
         Dashboard[Dashboard]
+        Chart[Anomolies Chart]
     end
 
     subgraph Backend
