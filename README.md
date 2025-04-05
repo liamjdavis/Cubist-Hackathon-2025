@@ -57,7 +57,97 @@ This tool was developed to address the critical need for data-driven insights in
 - **Performance Measurement**: Evaluate the effectiveness of congestion pricing policies through quantifiable metrics
 
 The tool serves multiple stakeholders including transportation planners, city officials, researchers, and the general public by transforming complex traffic data into actionable intelligence. By revealing both obvious and subtle patterns in traffic behavior, it provides crucial insights for optimizing traffic flow, reducing congestion, and evaluating the environmental and economic impacts of congestion pricing initiatives.
+```mermaid
+graph TD
+    %% Data Layer
+    subgraph "Database"
+        DB[PostgreSQL/SQLite]
+        VM[VehicleEntry Model] --> DB
+    end
 
+    %% Models
+    subgraph "Models"
+        VM --> |contains| Fields["
+            - toll_date
+            - toll_hour
+            - vehicle_class
+            - detection_group
+            - detection_region
+            - crz_entries
+            - etc.
+        "]
+    end
+
+    %% Core Components
+    subgraph "Core Components"
+        AD[AnomalyDetector]
+        CU[Cache Utilities]
+        DDSk[DDSketch Library]
+    end
+
+    %% Views
+    subgraph "Views"
+        IV[index View]
+        AV[anomalies View]
+        GAV[get_anomalies API]
+        GAHV[get_anomaly_history API]
+    end
+
+    %% Templates
+    subgraph "Templates"
+        IT[index.html]
+        AT[anomalies.html]
+        BT[base.html]
+        INCL[includes/
+            _header.html
+            _controls.html
+            _stats.html
+        ]
+    end
+
+    %% JS Components
+    subgraph "JavaScript Components"
+        PS[Perspective Viewer]
+        Filters[Region/Vehicle Filters]
+        Charts[Interactive Charts]
+        LiveUpd[Live Updates]
+    end
+
+    %% Relationships
+    VM --> AD
+    AD --> DDSk
+    CU --> VM
+    
+    IV --> CU
+    IV --> |renders| IT
+    AV --> CU
+    AV --> AD
+    AV --> |renders| AT
+    
+    GAV --> AD
+    GAV --> VM
+    GAHV --> AD
+    
+    IT --> BT
+    AT --> BT
+    IT --> INCL
+    
+    IT --> PS
+    IT --> Filters
+    IT --> Charts
+    IT --> LiveUpd
+    AT --> Charts
+    AT --> Filters
+
+    %% Data Flow
+    DB --> |raw data| VM
+    VM --> |processed for dashboard| CU
+    CU --> |cached data| IV
+    VM --> |updated with new entries| AD
+    AD --> |anomalies detected| AV
+    AD --> |live anomalies| GAV
+    AD --> |historical anomalies| GAHV
+```
 ![Historic New York](images/new-york-city-1979-1.jpg)
 
 ## Future Improvements
