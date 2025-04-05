@@ -77,12 +77,22 @@
     const totalVolume = document.getElementById('total-volume');
     const regionCount = document.getElementById('region-count');
     const debugPanel = document.getElementById('debug-panel');
+    const replayButton = document.getElementById('replay-button');
+    const replayStatus = document.getElementById('replay-status');
+    const liveToggle = document.getElementById('liveToggle');
     
-    // Current view state
+    // Current view state & Live Metrics
     let currentView = 'hourly';
     let worker;
     let table;
     let metricsIntervalId = null;
+    
+    // --- Replay State ---
+    let isReplaying = false;
+    let replayData = [];
+    let currentReplayStep = 0;
+    let replayIntervalId = null;
+    const REPLAY_SPEED_MS = 750; // milliseconds per step
     
     // Function to fetch live metrics from NY API
     async function fetchLiveMetrics() {
@@ -316,6 +326,12 @@
             // Start live metrics only after dashboard init is successful
             startLiveMetrics(); 
             updateLastUpdatedTime(); // Set initial timestamp
+
+            // Ensure replay button is correctly initialized
+            replayButton.textContent = 'Replay Last 24h';
+            replayButton.classList.remove('btn-danger');
+            replayButton.classList.add('btn-info');
+            replayStatus.textContent = '';
             
         } catch (error) {
             console.error('Error initializing dashboard:', error);
@@ -383,15 +399,17 @@
     
     // Setup event listeners
     function setupEventListeners() {
-        hourlyView.addEventListener('click', () => { setActiveView('hourly'); applyHourlyView(); });
-        dailyView.addEventListener('click', () => { setActiveView('daily'); applyDailyView(); });
-        monthlyView.addEventListener('click', () => { setActiveView('monthly'); applyMonthlyView(); });
+        hourlyView.addEventListener('click', () => { if (!isReplaying) { setActiveView('hourly'); applyHourlyView(); } });
+        dailyView.addEventListener('click', () => { if (!isReplaying) { setActiveView('daily'); applyDailyView(); } });
+        monthlyView.addEventListener('click', () => { if (!isReplaying) { setActiveView('monthly'); applyMonthlyView(); } });
         
         // Filters with debouncing
         let filterTimeout;
         const debouncedFilter = () => {
-            clearTimeout(filterTimeout);
-            filterTimeout = setTimeout(applyFilters, 300);
+             if (!isReplaying) {
+                clearTimeout(filterTimeout);
+                filterTimeout = setTimeout(applyFilters, 300);
+             }
         };
         regionFilter.addEventListener('change', debouncedFilter);
         vehicleFilter.addEventListener('change', debouncedFilter);
@@ -399,14 +417,27 @@
         // Live toggle listener
         document.getElementById('liveToggle').addEventListener('change', handleLiveToggle);
 
+         // Replay button listener
+         replayButton.addEventListener('click', () => {
+            if (isReplaying) {
+                stopReplay();
+            } else {
+                startReplay();
+            }
+        });
+
         // Debug Panel listeners (only if debug panel exists)
         if (debugPanel) {
             document.getElementById('debug-panel-close').addEventListener('click', toggleDebugPanel);
             // Add manual trigger if button exists
             const triggerBtn = document.getElementById('manual-metrics-trigger');
             if(triggerBtn) triggerBtn.addEventListener('click', () => { 
-                console.debug('[Metrics] Manual update triggered'); 
-                fetchLiveMetrics(); 
+                 if (!isReplaying) { // Only allow manual trigger if not replaying
+                    console.debug('[Metrics] Manual update triggered');
+                    fetchLiveMetrics();
+                 } else {
+                     console.debug('[Metrics] Manual update disabled during replay.');
+                 }
             });
             const togglePanelBtn = document.getElementById('toggle-debug-panel');
             if(togglePanelBtn) togglePanelBtn.addEventListener('click', toggleDebugPanel);
@@ -414,15 +445,23 @@
     }
 
     function handleLiveToggle() {
-        const liveToggle = document.getElementById('liveToggle');
         const liveIndicator = document.querySelector('.badge');
         if (liveToggle.checked) {
-            console.debug('[Metrics] Live updates enabled by user');
-            startLiveMetrics(); // Start/restart the interval
-            fetchLiveMetrics(); // Fetch immediately
-            if (liveIndicator) {
-                liveIndicator.className = 'badge bg-success me-1';
-                liveIndicator.textContent = 'LIVE';
+             if (!isReplaying) { // Only start if not replaying
+                console.debug('[Metrics] Live updates enabled by user');
+                startLiveMetrics(); // Start/restart the interval
+                fetchLiveMetrics(); // Fetch immediately
+                if (liveIndicator) {
+                    liveIndicator.className = 'badge bg-success me-1';
+                    liveIndicator.textContent = 'LIVE';
+                }
+            } else {
+                 console.debug('[Metrics] Live updates deferred until replay finishes.');
+                 // Keep toggle checked, but don't start interval yet
+                 if (liveIndicator) {
+                     liveIndicator.className = 'badge bg-warning me-1'; // Indicate pending state
+                     liveIndicator.textContent = 'REPLAYING';
+                 }
             }
         } else {
             console.debug('[Metrics] Live updates disabled by user');
@@ -569,27 +608,72 @@
     }
     
     // Update statistics based on the current view
-    async function updateStats() {
-        if (!table) return; // Don't run if table isn't ready
-        try {
+    async function updateStats(dataToUse = null) {
+         if (!isReplaying && !table) return; // Original check if not replaying
+         if (isReplaying && !dataToUse) return; // Need data during replay
+
+         try {
             console.time('update-stats');
-            const view = await viewer.view(); // Use viewer's current view
-            const statsData = await view.to_columns();
-            
-            // Calculate total based on the *current filtered view*
-            const currentTotalEntries = statsData.crz_entries ? statsData.crz_entries.reduce((sum, val) => sum + (val || 0), 0) : 0;
-            const hourlyAvg = Math.round(currentTotalEntries / 24);
-            
+            let currentTotalEntries = 0;
+            let currentRecordCount = 0; // Keep track for potential display
+            let currentRegions = new Set();
+
+             if (isReplaying) {
+                 // Calculate stats directly from the provided replay data subset
+                  currentTotalEntries = dataToUse.reduce((sum, record) => sum + (parseInt(record.crz_entries) || 0), 0);
+                  currentRecordCount = dataToUse.length; // Example: count of records processed so far
+                  dataToUse.forEach(record => currentRegions.add(record.detection_region));
+                  console.debug(`[Replay] Stats Update - Entries: ${currentTotalEntries}, Records: ${currentRecordCount}, Regions: ${currentRegions.size}`);
+
+             } else {
+                  // --- Original Logic using Perspective view ---
+                  // Get stats from the current perspective view if not replaying
+                 if (!viewer || !(await viewer.view())) {
+                     console.warn('Viewer or view not ready for stats update.');
+                     console.timeEnd('update-stats'); // Ensure timeEnd is called even on early exit
+                     return; // Exit if view isn't available
+                 }
+                 const view = await viewer.view();
+                 const statsData = await view.to_columns();
+                 view.delete(); // Clean up the view
+
+                 // Perspective view often aggregates, so crz_entries sum might be the most relevant value here
+                 currentTotalEntries = statsData.crz_entries ? statsData.crz_entries.reduce((sum, val) => sum + (val || 0), 0) : 0;
+                 // Record count and unique regions are harder to get accurately from an *aggregated* perspective view result.
+                 // We'll rely on the live update or replay mode for those specific stats for now.
+                 console.debug(`[Stats] Perspective Update - Sum Entries: ${currentTotalEntries}`);
+             }
+
+
+            // Update UI elements
+            // Decide what totalEntries should show: sum of crz_entries or record count? Let's use crz_entries sum for consistency.
+            totalEntries.textContent = currentTotalEntries.toLocaleString();
+            totalVolume.textContent = currentTotalEntries.toLocaleString(); // Set volume to the same value for now
+
+            // Only update region count if we have accurate data (during replay)
+            if (isReplaying) {
+                  regionCount.textContent = currentRegions.size.toLocaleString();
+            }
+            // Avg Hourly Calculation
+            const hourlyAvg = Math.round(currentTotalEntries / 24); // Calculate based on current total
             avgHourly.textContent = hourlyAvg.toLocaleString();
-            
-            view.delete();
+
+            // Only flash if not replaying (or maybe on first step?)
+            if (!isReplaying) {
+                 flashStatNumbers();
+            }
+
             console.timeEnd('update-stats');
-        } catch (error) {
-            // Avoid spamming console if view isn't ready during filtering
-            if (!error.message.includes('view is not initialized')) {
-                console.error('Error updating stats:', error);
-            } 
-        }
+         } catch (error) {
+             // Avoid spamming console if view isn't ready during filtering
+             if (!error.message?.includes('view is not initialized')) {
+                 console.error('Error updating stats:', error);
+             } else {
+                  console.warn('Stats update skipped, view not ready.');
+                  // Ensure timeEnd is called if an error occurs after time()
+                  console.timeEnd('update-stats');
+             }
+         }
     }
     
     // Function to update the last updated timestamp
@@ -707,6 +791,167 @@
         };
     }
 
+    // --- Replay Functions ---
+
+    function prepareReplayData() {
+        console.debug('[Replay] Preparing data for replay...');
+        // Assumption: aggData contains hourly data, possibly across multiple days,
+        // and is sorted chronologically. We need the last 24 unique hours.
+        // A more robust implementation would parse a real timestamp.
+        // This simple version takes the last 24 entries assuming they are sequential hours.
+        const uniqueHours = [];
+        const hourMap = new Map();
+
+        // Iterate backwards to get the latest hours first
+        for (let i = aggData.length - 1; i >= 0; i--) {
+            const record = aggData[i];
+            // Create a unique key for the hour (e.g., combining date and hour if available)
+            // Simple approach using hour_of_day, assuming data covers max 1 day or wraps correctly
+            const hourKey = record.hour_of_day; // Needs refinement if data spans > 24h or isn't sequential
+
+            if (!hourMap.has(hourKey) && uniqueHours.length < 24) {
+                hourMap.set(hourKey, []);
+                uniqueHours.push(hourKey); // Store the hour key
+            }
+            // Add record to the corresponding hour
+            if(hourMap.has(hourKey)) {
+               hourMap.get(hourKey).push(record);
+            }
+        }
+
+        // Sort the unique hours numerically (0-23)
+         uniqueHours.sort((a, b) => a - b);
+
+        // Build the replayData array, grouping records by the sorted hour keys
+        replayData = uniqueHours.map(hourKey => ({
+            hour: hourKey,
+            records: hourMap.get(hourKey)
+        }));
+
+        console.debug(`[Replay] Prepared ${replayData.length} steps for replay.`);
+        if (replayData.length === 0) {
+            console.warn('[Replay] No data available to replay.');
+            return false;
+        }
+        return true;
+    }
+
+    function startReplay() {
+        if (!prepareReplayData()) {
+           replayStatus.textContent = 'No data';
+           setTimeout(() => replayStatus.textContent = '', 2000);
+           return;
+        }
+
+        console.log('[Replay] Starting 24h replay...');
+        isReplaying = true;
+        stopLiveMetrics(); // Pause live updates
+
+        // Update UI
+        replayButton.textContent = 'Stop Replay';
+        replayButton.classList.remove('btn-info');
+        replayButton.classList.add('btn-danger');
+        replayStatus.textContent = 'Starting...';
+        setControlsEnabled(false); // Disable other controls
+
+        currentReplayStep = 0;
+        replayIntervalId = setInterval(advanceReplayStep, REPLAY_SPEED_MS);
+        advanceReplayStep(); // Run first step immediately
+    }
+
+    function advanceReplayStep() {
+        if (currentReplayStep >= replayData.length) {
+            stopReplay();
+            return;
+        }
+
+        const stepData = replayData[currentReplayStep];
+        const hour = stepData.hour;
+        const recordsForThisHour = stepData.records;
+
+        // Calculate cumulative stats up to the current hour
+        let cumulativeRecords = [];
+        for(let i = 0; i <= currentReplayStep; i++){
+           cumulativeRecords = cumulativeRecords.concat(replayData[i].records);
+        }
+
+
+        console.debug(`[Replay] Step ${currentReplayStep + 1}/${replayData.length}, Hour: ${hour}, Records this step: ${recordsForThisHour.length}, Cumulative: ${cumulativeRecords.length}`);
+        replayStatus.textContent = `Hour: ${hour}`;
+
+        // Update stats display using the cumulative records
+        updateStats(cumulativeRecords); // Pass the data for the current state
+
+        currentReplayStep++;
+    }
+
+    function stopReplay() {
+        console.log('[Replay] Stopping replay.');
+        clearInterval(replayIntervalId);
+        replayIntervalId = null;
+        isReplaying = false;
+
+        // Reset UI
+        replayButton.textContent = 'Replay Last 24h';
+        replayButton.classList.remove('btn-danger');
+        replayButton.classList.add('btn-info');
+        replayStatus.textContent = 'Finished';
+        setControlsEnabled(true); // Re-enable controls
+
+        // Reset stats to full dataset view
+        updateStats(aggData); // Update with original full data
+
+        // Clear status after a delay
+        setTimeout(() => replayStatus.textContent = '', 2000);
+
+        // Restart live metrics if the toggle is checked
+        if (liveToggle.checked) {
+            console.debug('[Replay] Restarting live metrics after replay.');
+            startLiveMetrics();
+            fetchLiveMetrics(); // Fetch immediately after replay
+             // Update indicator if needed
+            const liveIndicator = document.querySelector('.badge');
+             if (liveIndicator) {
+                liveIndicator.className = 'badge bg-success me-1';
+                liveIndicator.textContent = 'LIVE';
+            }
+        } else {
+             const liveIndicator = document.querySelector('.badge');
+             if (liveIndicator) {
+                liveIndicator.className = 'badge bg-secondary me-1';
+                liveIndicator.textContent = 'PAUSED';
+            }
+        }
+    }
+
+    function setControlsEnabled(enabled) {
+        // Disable/Enable filters, view toggles, live toggle during replay
+        regionFilter.disabled = !enabled;
+        vehicleFilter.disabled = !enabled;
+        hourlyView.disabled = !enabled;
+        dailyView.disabled = !enabled;
+        monthlyView.disabled = !enabled;
+        liveToggle.disabled = !enabled; // Disable changing live state during replay
+
+         // Update live indicator text based on replay state
+        const liveIndicator = document.querySelector('.badge');
+        if (liveIndicator) {
+           if (!enabled) { // Replay is starting/active
+                 liveIndicator.className = 'badge bg-warning me-1';
+                 liveIndicator.textContent = 'REPLAYING';
+           } else { // Replay stopped/finished
+                // Restore indicator based on liveToggle state
+                 if (liveToggle.checked) {
+                     liveIndicator.className = 'badge bg-success me-1';
+                     liveIndicator.textContent = 'LIVE';
+                 } else {
+                     liveIndicator.className = 'badge bg-secondary me-1';
+                     liveIndicator.textContent = 'PAUSED';
+                 }
+           }
+        }
+    }
+    
     // --- Initialization --- 
     setupDebugFeatures(); // Setup debug buttons/panel first
     initDashboard();    // Then initialize the main dashboard
