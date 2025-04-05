@@ -59,8 +59,15 @@
     console.debug('[Metrics] API endpoint:', API_ENDPOINT);
     
     // Get pre-aggregated data from server
+    console.log("[Debug] Raw agg_json string from template:", '{{ agg_json|escapejs }}');
     const aggData = JSON.parse('{{ agg_json|escapejs }}');
-    console.log(`Received pre-aggregated data with ${aggData.length} records`);
+    console.log("[Debug] Parsed aggData object:", aggData);
+    console.log(`Received pre-aggregated data with ${aggData ? aggData.length : '0'} records`);
+
+    // Get Perspective schema from server
+    console.log("[Debug] Raw perspective_schema string:", '{{ perspective_schema|escapejs }}');
+    const perspectiveSchema = JSON.parse('{{ perspective_schema|escapejs }}');
+    console.log("[Debug] Parsed perspectiveSchema object:", perspectiveSchema);
     
     // Get UI elements
     const viewer = document.getElementById('viewer');
@@ -299,9 +306,54 @@
             updateStatus('Creating Perspective worker...');
             worker = await perspective.worker();
             
-            updateStatus(`Loading pre-aggregated data (${aggData.length} records)...`);
+            updateStatus(`Loading data into Perspective (${aggData ? aggData.length : '0'} records)...`);
             console.time('table-creation');
-            table = await worker.table(aggData);
+            
+            // *** Check if aggData is empty and use schema if necessary ***
+            try {
+                if (aggData && aggData.length > 0) {
+                    console.log("[Debug] Initializing Perspective table with data.");
+                    table = await worker.table(aggData); // Let Perspective infer schema from data
+                } else if (perspectiveSchema && Object.keys(perspectiveSchema).length > 0) {
+                    console.log("[Debug] Initializing Perspective table with schema only (aggData is empty).");
+                    // Create a table with schema but no data
+                    table = await worker.table(perspectiveSchema);
+                    // Add one empty row to avoid certain Perspective bugs with empty tables
+                    const emptyRow = {};
+                    Object.keys(perspectiveSchema).forEach(key => {
+                        // Set default values based on column type
+                        if (perspectiveSchema[key] === 'integer') emptyRow[key] = 0;
+                        else if (perspectiveSchema[key] === 'float') emptyRow[key] = 0.0;
+                        else if (perspectiveSchema[key] === 'boolean') emptyRow[key] = false;
+                        else if (perspectiveSchema[key] === 'datetime') emptyRow[key] = new Date();
+                        else emptyRow[key] = "";
+                    });
+                    // Add the empty row
+                    console.log("[Debug] Adding placeholder row to avoid empty table bugs:", emptyRow);
+                    await table.update([emptyRow]);
+                } else {
+                    console.error("[Error] Both aggData and perspectiveSchema are empty/invalid. Cannot initialize Perspective table.");
+                    updateStatus('Error: Missing data and schema for table initialization.', true);
+                    throw new Error("Missing data and schema for Perspective table.");
+                }
+            } catch (tableError) {
+                console.error("Error creating Perspective table:", tableError);
+                // Try one more approach - a minimal schema with the most essential columns
+                const minimalSchema = {
+                    'detection_region': 'string',
+                    'vehicle_class': 'string',
+                    'crz_entries': 'integer'
+                };
+                console.log("[Debug] Attempting with minimal fallback schema:", minimalSchema);
+                table = await worker.table(minimalSchema);
+                // Add a single placeholder row
+                await table.update([{
+                    'detection_region': 'Default',
+                    'vehicle_class': 'All',
+                    'crz_entries': 0
+                }]);
+            }
+            
             console.timeEnd('table-creation');
             
             updateStatus('Generating filters...');
@@ -309,14 +361,35 @@
             
             updateStatus('Initializing visualization...');
             console.time('viewer-load');
-            await viewer.setAttribute('lazy', '0.25'); // Set lazy loading
-            await viewer.load(Promise.resolve(table));
-            console.timeEnd('viewer-load');
             
-            updateStatus('Configuring visualization...');
-            console.time('initial-view');
-            await applyHourlyView();
-            console.timeEnd('initial-view');
+            try {
+                await viewer.setAttribute('lazy', '0.25'); // Set lazy loading
+                await viewer.load(Promise.resolve(table));
+                console.timeEnd('viewer-load');
+                
+                updateStatus('Configuring visualization...');
+                console.time('initial-view');
+                
+                try {
+                    let viewSuccess = await applyHourlyView();
+                    // If hourly view fails, try the simple fallback view
+                    if (!viewSuccess) {
+                        console.warn('Could not apply any standard views. Using super simple view.');
+                        await applySimpleFallbackView();
+                    }
+                } catch (viewError) {
+                    console.error("Error applying initial view:", viewError);
+                    // Try one final minimal view - just display the data without any configuration
+                    await viewer.restore({ plugin: "Datagrid" });
+                }
+                
+                console.timeEnd('initial-view');
+            } catch (viewerError) {
+                console.error("Error setting up visualization viewer:", viewerError);
+                updateStatus('Error initializing visualization. See console for details.');
+                loading.style.backgroundColor = 'rgba(255,0,0,0.1)';
+                // Continue with event listeners and other setup, but the visualization won't be available
+            }
             
             setupEventListeners();
             updateStats(); // Calculate initial stats
@@ -511,14 +584,34 @@
             return true;
         } catch (error) {
             console.error(`Error applying ${viewName} view:`, error);
-            statusIndicator.textContent = 'Error applying view';
+            statusIndicator.textContent = 'Error applying view, trying fallback';
             statusIndicator.style.color = '#dc3545';
             return false;
         }
     }
 
+    // Check for required columns in the data
+    function hasAllColumns(data, required) {
+        if (!data || !Array.isArray(data) || data.length === 0) return false;
+        return required.every(col => col in data[0]);
+    }
+
     async function applyHourlyView() {
-        return applyViewConfiguration({
+        console.log("[Debug] Attempting to apply hourly view...");
+        
+        // Log which required columns are present/missing
+        const requiredColumns = ["detection_region", "hour_of_day", "vehicle_class", "crz_entries"];
+        const columnsPresent = {};
+        requiredColumns.forEach(col => {
+            if (aggData.length > 0 && col in aggData[0]) {
+                columnsPresent[col] = true;
+            } else {
+                columnsPresent[col] = false;
+            }
+        });
+        console.log("[Debug] Column availability for hourly view:", columnsPresent);
+        
+        const success = await applyViewConfiguration({
             plugin: "Y Bar",
             columns: ["crz_entries"],
             group_by: ["detection_region", "hour_of_day"],
@@ -526,12 +619,19 @@
             sort: [["hour_of_day", "asc"]],
             aggregates: { crz_entries: "sum" }
         }, 'hourly');
+        
+        if (!success) {
+            console.log("[Debug] Hourly view failed, trying simple fallback view...");
+            // Fallback to a much simpler view if the hourly view fails
+            return applySimpleFallbackView();
+        }
+        return success;
     }
     
     async function applyDailyView() {
         const hasDayOfWeek = aggData.length > 0 && 'day_of_week' in aggData[0];
         if (hasDayOfWeek) {
-            return applyViewConfiguration({
+            const success = await applyViewConfiguration({
                 plugin: "Y Bar",
                 columns: ["crz_entries"],
                 group_by: ["detection_region", "day_of_week"],
@@ -539,24 +639,25 @@
                 sort: [["day_of_week_int", "asc"]],
                 aggregates: { crz_entries: "sum" }
             }, 'daily');
+            
+            if (!success) {
+                console.log("[Debug] Daily view failed, trying simple fallback view...");
+                return applySimpleFallbackView();
+            }
+            return success;
         } else {
             console.warn('Daily view (day_of_week) not available in pre-aggregated data. Falling back.');
             statusIndicator.textContent = 'Daily data not pre-aggregated';
             statusIndicator.style.color = '#fd7e14'; // Warning color
-            // Fallback view (optional, e.g., show hourly again or a message)
-            return applyViewConfiguration({
-                 plugin: "Treemap", 
-                 columns: ["crz_entries"], 
-                 group_by: ["detection_region", "vehicle_class"], 
-                 aggregates: { crz_entries: "sum" } 
-            }, 'daily-fallback');
+            // Fallback view
+            return applySimpleFallbackView();
         }
     }
     
     async function applyMonthlyView() {
         const hasMonthYear = aggData.length > 0 && 'month_year' in aggData[0];
         if (hasMonthYear) {
-            return applyViewConfiguration({
+            const success = await applyViewConfiguration({
                 plugin: "X/Y Line",
                 columns: ["crz_entries"],
                 group_by: ["month_year"],
@@ -564,18 +665,28 @@
                 sort: [["month_year", "asc"]],
                 aggregates: { crz_entries: "sum" }
             }, 'monthly');
+            
+            if (!success) {
+                console.log("[Debug] Monthly view failed, trying simple fallback view...");
+                return applySimpleFallbackView();
+            }
+            return success;
         } else {
             console.warn('Monthly view (month_year) not available in pre-aggregated data. Falling back.');
             statusIndicator.textContent = 'Monthly data not pre-aggregated';
             statusIndicator.style.color = '#fd7e14';
-            return applyViewConfiguration({
-                plugin: "Y Bar", 
-                columns: ["crz_entries"], 
-                group_by: ["detection_region"], 
-                split_by: ["vehicle_class"], 
-                aggregates: { crz_entries: "sum" } 
-            }, 'monthly-fallback');
+            return applySimpleFallbackView();
         }
+    }
+    
+    // Extra simple fallback view that uses minimum columns
+    async function applySimpleFallbackView() {
+        console.log("[Debug] Applying simple fallback view with minimal dependencies");
+        return applyViewConfiguration({
+            plugin: "Datagrid", // Use the simplest view possible
+            columns: ["crz_entries", "detection_region", "vehicle_class"],
+            sort: []
+        }, 'fallback');
     }
     
     // Apply filters

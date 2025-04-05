@@ -245,9 +245,11 @@
       const endDateInput = document.getElementById("end-date");
       const applyDateFilterBtn = document.getElementById("apply-date-filter");
 
-      // Vehicle types and their colors (passed from the backend)
-      const vehicleTypes = {{ vehicle_types|safe|default:"{}" }};
-      const entryPoints = {{ entry_points|safe|default:"{}" }};
+      // Vehicle types and their colors (passed from the backend as JSON strings)
+      // Use escapejs to handle quotes/special chars within the JSON string safely,
+      // then JSON.parse to convert the string into a JS object.
+      const vehicleTypes = JSON.parse('{{ vehicle_types|safe|escapejs }}');
+      const entryPoints = JSON.parse('{{ entry_points|safe|escapejs }}');
       
       // Create the vehicle type legend
       Object.entries(vehicleTypes).forEach(([key, value]) => {
