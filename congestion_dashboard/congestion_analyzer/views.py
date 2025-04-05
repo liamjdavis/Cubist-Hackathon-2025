@@ -9,6 +9,8 @@ from .anomaly_detection import AnomalyDetector
 from .models import VehicleEntry
 from datetime import datetime, timedelta, date
 
+anomaly_detector = AnomalyDetector()
+
 # Remove old helper imports if they are no longer directly used here
 # from .view_helpers.data_fetcher import get_vehicle_data
 # from .view_helpers.stats_calculator import calculate_base_stats
@@ -82,8 +84,6 @@ def index(request):
         return render(request, 'congestion_analyzer/index.html', context) # Return main page with error state
 
 def anomalies(request):
-    anomaly_detector = AnomalyDetector()
-    
     """View function for the anomaly detection page."""
     try:
         print("Starting anomaly detection...")
@@ -144,20 +144,69 @@ def anomalies(request):
         return render(request, 'congestion_analyzer/anomalies.html', context)
 
 def get_anomalies(request):
-    """API endpoint to get current anomalies"""
+    """API endpoint to get current anomalies from the last 10 minutes"""
     try:
-        # Get the latest entry for anomaly detection
-        latest_entry = VehicleEntry.objects.order_by('-toll_date', '-toll_hour', '-minute_of_hour').first()
-        if latest_entry:
-            anomaly_detector.update(latest_entry)
+        # Get the current time for filtering
+        current_time = timezone.now()
+        print(f"Current time: {current_time}")
         
-        anomalies = anomaly_detector.detect_anomalies()
-        print(f"API: Detected {len(anomalies)} anomalies")  # Debug print
-        return JsonResponse({'anomalies': anomalies}, encoder=CustomJSONEncoder)
+        # Get the most recent entries for detection
+        latest_entries = VehicleEntry.objects.order_by('-toll_date', '-toll_hour', '-minute_of_hour')[:100]
+        
+        if latest_entries.exists():
+            print(f"Found {latest_entries.count()} recent entries for live anomaly detection")
+            for entry in latest_entries:
+                anomaly_detector.update(entry)
+        
+        # Detect all anomalies
+        all_anomalies = anomaly_detector.detect_anomalies()
+        
+        # Calculate the cutoff time (10 minutes ago)
+        cutoff_time = current_time - timedelta(minutes=10)
+        print(f"Filtering anomalies after: {cutoff_time}")
+        
+        # Filter anomalies to only include the most recent ones
+        if all_anomalies:
+            # Sort anomalies by timestamp (most recent first) - handle different types safely
+            for anomaly in all_anomalies:
+                # Convert timestamp to string if it's not already
+                if not isinstance(anomaly['timestamp'], str):
+                    anomaly['timestamp'] = str(anomaly['timestamp'])
+                
+                # Extract date components safely
+                try:
+                    anomaly['date_obj'] = datetime.fromisoformat(anomaly['timestamp'])
+                except (ValueError, TypeError):
+                    # Fallback for date parsing errors - use current time as default
+                    anomaly['date_obj'] = datetime.now()
+                
+                # Create full datetime
+                anomaly['full_datetime'] = datetime.combine(
+                    anomaly['date_obj'].date(),
+                    datetime.min.time()
+                ) + timedelta(hours=int(anomaly['hour']), minutes=int(anomaly['minute']))
+            
+            # Sort by the full datetime (most recent first)
+            all_anomalies.sort(key=lambda x: x['full_datetime'], reverse=True)
+            
+            # Take only the most recent 5 anomalies
+            recent_anomalies = all_anomalies[:5]
+            
+            # Clean up the temporary fields we added
+            for anomaly in recent_anomalies:
+                del anomaly['date_obj']
+                del anomaly['full_datetime']
+        else:
+            recent_anomalies = []
+        
+        print(f"API: Detected {len(all_anomalies)} total anomalies, returning {len(recent_anomalies)} most recent")
+        return JsonResponse({'anomalies': recent_anomalies}, encoder=CustomJSONEncoder)
     except Exception as e:
-        print(f"Error in get_anomalies: {str(e)}")  # Debug print
+        print(f"Error in get_anomalies: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return JsonResponse({'anomalies': []})
-
+                
 def get_anomaly_history(request):
     """API endpoint to get historical anomalies"""
     try:

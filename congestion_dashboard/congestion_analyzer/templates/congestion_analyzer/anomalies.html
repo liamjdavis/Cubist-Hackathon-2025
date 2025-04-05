@@ -6,6 +6,46 @@
 {% block content %}
     {% include 'congestion_analyzer/includes/_header.html' %}
     
+    <!-- Live Anomalies Section -->
+    <div class="container-fluid mt-4">
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <!-- Replace the existing Live Anomalies section header with this updated version -->
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="d-flex align-items-center mb-1">
+                                <h5 class="mb-0 me-2">Live Anomaly Detection</h5>
+                                <button id="manual-update-btn" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-arrow-clockwise"></i> Update Now
+                                </button>
+                            </div>
+                            <div>
+                                <small id="live-status" class="badge bg-success me-1">LIVE</small>
+                                <small id="last-updated" class="text-muted">Last update: initializing...</small>
+                                <small class="text-muted ms-2">(Displaying 5 most recent anomalies)</small>
+                            </div>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="liveAnomalyToggle" checked>
+                            <label class="form-check-label" for="liveAnomalyToggle">Live Updates</label>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div id="live-anomalies-container">
+                            <div class="alert alert-info" id="no-live-anomalies">
+                                No active anomalies detected in the current period.
+                            </div>
+                            <div id="live-anomalies" class="d-none">
+                                <!-- Live anomalies will be displayed here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
     <div class="container-fluid mt-4">
         <div class="row mb-4">
             <div class="col-12">
@@ -114,6 +154,25 @@
         .deviation-negative {
             color: #198754;
         }
+        
+        .pulse {
+            animation: pulse-animation 1s;
+        }
+        
+        @keyframes pulse-animation {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        
+        .anomaly-card {
+            transition: all 0.3s;
+        }
+        
+        .anomaly-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
     </style>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
@@ -141,6 +200,12 @@
             option.value = type;
             option.textContent = type;
             vehicleFilter.appendChild(option);
+        });
+
+        // Add this with the other event listeners
+        document.getElementById('manual-update-btn').addEventListener('click', function() {
+            console.log('Manual update triggered');
+            fetchLiveAnomalies(); // Fetch immediately
         });
         
         // Setup filter event listeners
@@ -279,8 +344,167 @@
             });
         }
         
+        // Live anomaly functionality
+        const ANOMALY_REFRESH_INTERVAL = 600000; // 10 minute
+        let anomalyIntervalId = null;
+        const liveAnomalyToggle = document.getElementById('liveAnomalyToggle');
+        const liveStatus = document.getElementById('live-status');
+        const lastUpdated = document.getElementById('last-updated');
+        const noLiveAnomalies = document.getElementById('no-live-anomalies');
+        const liveAnomaliesContainer = document.getElementById('live-anomalies');
+
+        // Setup live toggle event listener
+        liveAnomalyToggle.addEventListener('change', function() {
+            if (this.checked) {
+                startLiveAnomalyUpdates();
+                liveStatus.className = 'badge bg-success me-1';
+                liveStatus.textContent = 'LIVE';
+            } else {
+                stopLiveAnomalyUpdates();
+                liveStatus.className = 'badge bg-secondary me-1';
+                liveStatus.textContent = 'PAUSED';
+            }
+        });
+
+        function startLiveAnomalyUpdates() {
+            if (anomalyIntervalId === null) {
+                console.log('Starting live anomaly updates');
+                fetchLiveAnomalies(); // Fetch immediately
+                anomalyIntervalId = setInterval(fetchLiveAnomalies, ANOMALY_REFRESH_INTERVAL);
+            }
+        }
+
+        function stopLiveAnomalyUpdates() {
+            if (anomalyIntervalId !== null) {
+                console.log('Stopping live anomaly updates');
+                clearInterval(anomalyIntervalId);
+                anomalyIntervalId = null;
+            }
+        }
+
+        function fetchLiveAnomalies() {
+            fetch('/get_anomalies/')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`API error: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    updateLiveAnomalies(data.anomalies);
+                    updateLastUpdatedTime();
+                    pulseLiveIndicator();
+                })
+                .catch(error => {
+                    console.error('Error fetching live anomalies:', error);
+                    handleLiveAnomalyError(error);
+                });
+        }
+
+        function updateLastUpdatedTime() {
+            const now = new Date();
+            const timeString = now.toLocaleTimeString();
+            lastUpdated.textContent = `Last update: ${timeString}`;
+        }
+
+        function pulseLiveIndicator() {
+            liveStatus.classList.add('pulse');
+            setTimeout(() => {
+                liveStatus.classList.remove('pulse');
+            }, 1000);
+        }
+
+        function updateLiveAnomalies(anomalies) {
+            if (!anomalies || anomalies.length === 0) {
+                noLiveAnomalies.classList.remove('d-none');
+                liveAnomaliesContainer.classList.add('d-none');
+                return;
+            }
+            
+            // Sort anomalies by timestamp (most recent first) and severity
+            anomalies.sort((a, b) => {
+                // First by timestamp (descending)
+                if (a.timestamp !== b.timestamp) {
+                    return new Date(b.timestamp) - new Date(a.timestamp);
+                }
+                // Then by hour (descending)
+                if (a.hour !== b.hour) {
+                    return b.hour - a.hour;
+                }
+                // Then by minute (descending)
+                if (a.minute !== b.minute) {
+                    return b.minute - a.minute;
+                }
+                // Then by deviation magnitude (descending)
+                return Math.abs(b.deviation) - Math.abs(a.deviation);
+            });
+            
+            // Take only the 5 most recent and severe anomalies for the live display
+            const recentAnomalies = anomalies.slice(0, 5);
+            
+            // Update the UI
+            noLiveAnomalies.classList.add('d-none');
+            liveAnomaliesContainer.classList.remove('d-none');
+            liveAnomaliesContainer.innerHTML = '';
+            
+            // Create a card for each anomaly
+            recentAnomalies.forEach(anomaly => {
+                const anomalyCard = document.createElement('div');
+                anomalyCard.className = 'card mb-2 anomaly-card';
+                
+                // Set border color based on anomaly type
+                anomalyCard.classList.add(anomaly.type === 'spike' ? 'border-danger' : 'border-success');
+                
+                const timeStr = `${anomaly.timestamp} ${anomaly.hour.toString().padStart(2, '0')}:${anomaly.minute.toString().padStart(2, '0')}`;
+                const deviationClass = anomaly.deviation > 0 ? 'text-danger' : 'text-success';
+                
+                anomalyCard.innerHTML = `
+                    <div class="card-body py-2">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <span class="badge ${anomaly.type === 'spike' ? 'spike' : 'drop'} me-2">${anomaly.type}</span>
+                                <strong>${anomaly.vehicle_class}</strong> in <strong>${anomaly.detection_region}</strong>
+                            </div>
+                            <div class="${deviationClass}">
+                                <strong>${Math.abs(anomaly.deviation).toFixed(1)}%</strong> 
+                                ${anomaly.type === 'spike' ? 'above' : 'below'} threshold
+                            </div>
+                        </div>
+                        <div class="small text-muted mt-1">
+                            ${timeStr} - Threshold: ${anomaly.threshold}, Entries: ${anomaly.entries.toLocaleString()} 
+                            (Expected: ${anomaly.expected.toLocaleString()})
+                        </div>
+                    </div>
+                `;
+                
+                liveAnomaliesContainer.appendChild(anomalyCard);
+            });
+        }
+
+        function handleLiveAnomalyError(error) {
+            console.error('Live anomaly fetch error:', error);
+            liveStatus.className = 'badge bg-danger me-1';
+            liveStatus.textContent = 'ERROR';
+            
+            // Reset after 10 seconds
+            setTimeout(() => {
+                if (liveStatus.classList.contains('bg-danger')) {
+                    if (liveAnomalyToggle.checked) {
+                        liveStatus.className = 'badge bg-success me-1';
+                        liveStatus.textContent = 'LIVE';
+                    } else {
+                        liveStatus.className = 'badge bg-secondary me-1';
+                        liveStatus.textContent = 'PAUSED';
+                    }
+                }
+            }, 10000);
+        }
+        
         // Initial update with server-side data
         updateAnomalyTable(anomalyData);
         updateCharts(anomalyData);
+        
+        // Start live updates when the page loads
+        startLiveAnomalyUpdates();
     </script>
-{% endblock content %} 
+{% endblock content %}

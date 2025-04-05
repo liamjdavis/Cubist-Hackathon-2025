@@ -136,8 +136,11 @@
     <div class="container-fluid">
       <span class="navbar-brand">NYC Congestion Zone Analysis</span>
       <div class="d-flex">
-        <a href="{% url 'congestion_analyzer:index' %}" class="btn btn-primary">
-          <i class="bi bi-bar-chart-fill"></i> Back to Dashboard
+        <a href="{% url 'congestion_analyzer:index' %}" class="btn btn-primary me-2">
+          <i class="bi bi-speedometer2"></i> Dashboard
+        </a>
+        <a href="{% url 'congestion_analyzer:anomalies' %}" class="btn btn-primary">
+          <i class="bi bi-exclamation-triangle-fill"></i> Anomalies
         </a>
       </div>
     </div>
