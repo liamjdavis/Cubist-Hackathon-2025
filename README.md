@@ -1,4 +1,4 @@
-# MTA Congestion Pricing Analysis Tool
+# MTA Congestion Analysis Tool
 
 A comprehensive visualization and analysis tool for monitoring and analyzing traffic patterns in Manhattan's Congestion Pricing Zone. This tool provides both historical analysis and real-time monitoring capabilities to help understand and manage traffic congestion in New York City.
 
@@ -18,6 +18,8 @@ A comprehensive visualization and analysis tool for monitoring and analyzing tra
 - **Live Traffic Heatmap**: Real-time visualization of congestion patterns
 - **Entry Point Monitoring**: Track vehicle entries at key locations
 - **Dynamic Updates**: Data refreshes every few seconds for current conditions
+- **Anomaly Detection**: Real-Time and historical anomaly detection
+
 
 ### Map Visualization
 - **Interactive Map**: Explore traffic patterns geographically
