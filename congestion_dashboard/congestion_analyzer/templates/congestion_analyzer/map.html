@@ -480,7 +480,7 @@
             data: randomPointsData,
             getPosition: d => [d.lon, d.lat],
             getWeight: d => d.score,
-            radiusPixels: 60,
+            radiusPixels: 50,  // Adjust from 60 to a smaller value like 50 or 40 to accommodate more points
             intensity: 1,
             visible: false
           });

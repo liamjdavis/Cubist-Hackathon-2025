@@ -98,7 +98,7 @@ def map(request):
 
         # Convert the list into the format Shapely expects: (longitude, latitude)
        
-        dict_points = get_random_points(vertices, num_points=20)
+        dict_points = get_random_points(vertices, num_points=50)
 
         # Generate 15 random points within the polygon
         

@@ -78,7 +78,7 @@ def get_heatmap_points(request):
     
     # Get fixed points (only generate them once)
     if not hasattr(get_heatmap_points, "points_cache"):
-        get_heatmap_points.points_cache = get_random_points(vertices, num_points=15)
+        get_heatmap_points.points_cache = get_random_points(vertices, num_points=50)  # Increased from 15 to 50
 
     # Update the fixed points with real congestion scores
     for point in get_heatmap_points.points_cache:
