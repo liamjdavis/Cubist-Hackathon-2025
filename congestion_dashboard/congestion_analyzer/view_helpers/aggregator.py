@@ -18,9 +18,9 @@ def perform_aggregations(df):
     print("[Aggregator] Ensured 'crz_entries' is numeric.")
 
     # Define required columns for each aggregation level
-    hourly_cols = ['detection_region', 'vehicle_class', 'hour_of_day']
-    daily_cols = ['detection_region', 'vehicle_class', 'day_of_week', 'day_of_week_int']
-    monthly_cols = ['detection_region', 'vehicle_class', 'month_year'] # month_year is derived in data_fetcher
+    hourly_cols = ['detection_region', 'vehicle_class', 'hour_of_day', 'toll_date', 'day_of_week_int', 'time_period']
+    daily_cols = ['detection_region', 'vehicle_class', 'day_of_week_int', 'toll_date', 'time_period']
+    monthly_cols = ['detection_region', 'vehicle_class', 'month_year', 'toll_date', 'day_of_week_int', 'time_period'] # month_year is derived in data_fetcher
 
     # --- Hourly Aggregation ---
     print("[Aggregator] Performing hourly aggregation...")
