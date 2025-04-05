@@ -3,3 +3,11 @@ perspective-python
 pandas 
 pyarrow
 panel
+ddsketch
+shapely
+matplotlib
+numpy
+requests
+sseclient-
+httpx
+pydantic

@@ -14,7 +14,7 @@
   <!-- Bootstrap icons -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.0/font/bootstrap-icons.css">
 
-  <!-- CSS for layout and forcing the deck.gl canvas to fill the container -->
+  <!-- CSS for layout and deck.gl canvas styling -->
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -23,20 +23,14 @@
       background-color: #f8f9fa;
     }
     .navbar {
-      background-color: #0d6efd; /* Match the primary button color used in _header.html */
+      background-color: #0d6efd;
       padding: 0.5rem 1rem;
     }
     .navbar-brand {
       color: white;
       font-weight: 600;
     }
-    .data-card {
-      background: white;
-      padding: 1rem;
-      border-radius: 6px;
-      margin-bottom: 1rem;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-    }
+    .data-card,
     .filter-card {
       background: white;
       padding: 1rem;
@@ -52,7 +46,7 @@
       color: #6c757d;
       border-top: 1px solid #dee2e6;
     }
-    /* Map container should have a defined size and no inner children */
+    /* Map container styling */
     #map-container {
       position: relative;
       width: 100%;
@@ -62,7 +56,6 @@
       overflow: hidden;
       z-index: 1;
     }
-    /* Make sure the deck.gl canvas fills the map container */
     #map-container > canvas {
       position: absolute;
       top: 0;
@@ -71,7 +64,6 @@
       height: 100% !important;
       pointer-events: auto;
     }
-    /* Loading element is positioned over the map, but with a higher z-index until hidden */
     #loading {
       position: absolute;
       top: 50%;
@@ -102,10 +94,6 @@
       border-radius: 3px;
       margin-right: 8px;
     }
-    .range-slider {
-      width: 100%;
-      margin: 10px 0;
-    }
     .date-range-container {
       display: flex;
       gap: 1rem;
@@ -119,112 +107,161 @@
       background-color: #0d6efd;
       border-color: #0d6efd;
     }
-    
     .navbar .btn-outline-light:hover {
       background-color: rgba(255, 255, 255, 0.1);
     }
-    
-    /* For consistent button sizing and spacing */
     .navbar .btn {
       padding: 0.375rem 0.75rem;
       margin-left: 0.5rem;
     }
+    /* Mode toggle styling */
+    .mode-toggle {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 1rem;
+    }
+    .mode-toggle .btn-group {
+      width: 100%;
+      max-width: 400px;
+    }
+    .mode-toggle .btn {
+      flex: 1;
+    }
+    /* Sections that change with mode */
+    .historical-section, .live-section {
+      display: none;
+    }
+    .historical-section.active, .live-section.active {
+      display: block;
+    }
   </style>
 </head>
 <body>
+  <!-- Navigation bar -->
   <nav class="navbar navbar-dark mb-4">
     <div class="container-fluid">
       <span class="navbar-brand">NYC Congestion Zone Analysis</span>
       <div class="d-flex">
-        <a href="{% url 'congestion_analyzer:index' %}" class="btn btn-primary me-2">
-          <i class="bi bi-speedometer2"></i> Dashboard
-        </a>
-        <a href="{% url 'congestion_analyzer:map' %}" class="btn btn-primary me-2">
-          <i class="bi bi-map-fill"></i> Map View
-        </a>
-        <a href="{% url 'congestion_analyzer:anomalies' %}" class="btn btn-primary">
-          <i class="bi bi-exclamation-triangle-fill"></i> Anomalies
+        <a href="{% url 'congestion_analyzer:index' %}" class="btn btn-primary">
+          <i class="bi bi-bar-chart-fill"></i> Back to Dashboard
         </a>
       </div>
     </div>
   </nav>
 
   <div class="container-fluid">
+    <!-- Mode Toggle Buttons -->
     <div class="row">
       <div class="col-md-10 offset-md-1">
-        <div class="data-card">
-          <h2>NYC Congestion Zone Entry Points</h2>
-          <p>
-            Interactive visualization showing vehicle entries by type at major Manhattan congestion zone entry points.
-          </p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Data Range Filter Widget -->
-    <div class="row">
-      <div class="col-md-10 offset-md-1">
-        <div class="filter-card">
-          <h4>Date Range Selection</h4>
-          
-          <!-- Data range selector -->
-          <h5>Select Date Range:</h5>
-          <div class="date-range-container">
-            <div class="date-input">
-              <label for="start-date">Start Date:</label>
-              <input 
-                type="date" 
-                id="start-date" 
-                class="form-control" 
-                value="{{ min_date|default:'2023-01-01' }}" 
-                min="{{ min_date|default:'2023-01-01' }}" 
-                max="{{ max_date|default:'2025-04-05' }}"
-              >
-            </div>
-            <div class="date-input">
-              <label for="end-date">End Date:</label>
-              <input 
-                type="date" 
-                id="end-date" 
-                class="form-control" 
-                value="{{ max_date|default:'2025-04-05' }}" 
-                min="{{ min_date|default:'2023-01-01' }}" 
-                max="{{ max_date|default:'2025-04-05' }}"
-              >
-            </div>
-            <button id="apply-date-filter" class="btn btn-primary">Apply</button>
+        <div class="mode-toggle">
+          <div class="btn-group" role="group">
+            <button type="button" class="btn btn-primary active" data-mode="historical">
+              <i class="bi bi-clock-history"></i> Historical Data
+            </button>
+            <button type="button" class="btn btn-outline-primary" data-mode="live">
+              <i class="bi bi-lightning-charge-fill"></i> Live Mode
+            </button>
           </div>
         </div>
       </div>
     </div>
 
+    <!-- Historical Data Section -->
+    <div class="historical-section active">
+      <div class="row">
+        <div class="col-md-10 offset-md-1">
+          <div class="data-card">
+            <h2>NYC Congestion Zone Entry Points</h2>
+            <p>
+              Interactive visualization showing vehicle entries by type at major Manhattan congestion zone entry points.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Date Range Filter Widget -->
+      <div class="row">
+        <div class="col-md-10 offset-md-1">
+          <div class="filter-card">
+            <h4>Date Range Selection</h4>
+            <h5>Select Date Range:</h5>
+            <div class="date-range-container">
+              <div class="date-input">
+                <label for="start-date">Start Date:</label>
+                <input 
+                  type="date" 
+                  id="start-date" 
+                  class="form-control" 
+                  value="{{ min_date|default:'2023-01-01' }}" 
+                  min="{{ min_date|default:'2023-01-01' }}" 
+                  max="{{ max_date|default:'2025-04-05' }}"
+                >
+              </div>
+              <div class="date-input">
+                <label for="end-date">End Date:</label>
+                <input 
+                  type="date" 
+                  id="end-date" 
+                  class="form-control" 
+                  value="{{ max_date|default:'2025-04-05' }}" 
+                  min="{{ min_date|default:'2023-01-01' }}" 
+                  max="{{ max_date|default:'2025-04-05' }}"
+                >
+              </div>
+              <button id="apply-date-filter" class="btn btn-primary">Apply</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Legend -->
+      <div class="row">
+        <div class="col-md-10 offset-md-1">
+          <div class="legend">
+            <h5>Vehicle Types</h5>
+            <div id="vehicle-legend-items">
+              <!-- Dynamically inserted -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Mode Section -->
+    <div class="live-section">
+      <div class="row">
+        <div class="col-md-10 offset-md-1">
+          <div class="data-card">
+            <h2>Live Traffic Heatmap</h2>
+            <p>
+              Real-time visualization of traffic congestion patterns in the Manhattan Congestion Zone.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Map Container -->
     <div class="row position-relative">
       <div class="col-md-10 offset-md-1 position-relative">
-        <!-- Map container is kept completely empty -->
         <div id="map-container"></div>
-        <!-- Loading element is overlaid on top -->
         <div id="loading">Loading visualization...</div>
       </div>
     </div>
 
+    <!-- About This Map -->
     <div class="row">
       <div class="col-md-10 offset-md-1">
-        <!-- Legend for the visualization -->
-        <div class="legend">
-          <h5>Vehicle Types</h5>
-          <div id="vehicle-legend-items">
-            <!-- Vehicle type legend items will be dynamically inserted here -->
-          </div>
-        </div>
-
         <div class="data-card">
           <h4>About This Map</h4>
-          <p>
+          <p class="historical-description">
             This visualization displays traffic volume by vehicle type at key entry points to the Manhattan Congestion Zone.
-          </p>
-          <p>
             Each column represents a specific vehicle category, with the height proportional to the number of entries for that 
-            vehicle type at each entry point. Vehicle types are displayed side by side at each location for easy comparison.
+            vehicle type at each entry point.
+          </p>
+          <p class="live-description" style="display: none;">
+            The heatmap shows real-time traffic congestion patterns, with warmer colors indicating higher congestion levels.
+            The data is updated every few seconds to provide the most current view of traffic conditions.
           </p>
         </div>
       </div>
@@ -237,11 +274,16 @@
     </div>
   </footer>
 
-  <!-- Load deck.gl main library -->
+  <!-- Load deck.gl and geo-layers -->
   <script src="https://unpkg.com/deck.gl@8.8.0/dist.min.js"></script>
-  <!-- Load the geo-layers module for TileLayer -->
   <script src="https://unpkg.com/@deck.gl/geo-layers@8.8.0/dist.min.js"></script>
 
+  <!-- Random points data passed from backend -->
+  <script>
+    const randomPointsData = JSON.parse('{{ points_data|safe|escapejs }}');
+  </script>
+
+  <!-- Main JavaScript -->
   <script>
     document.addEventListener("DOMContentLoaded", function () {
       const loadingElement = document.getElementById("loading");
@@ -250,23 +292,35 @@
       const startDateInput = document.getElementById("start-date");
       const endDateInput = document.getElementById("end-date");
       const applyDateFilterBtn = document.getElementById("apply-date-filter");
+      const modeButtons = document.querySelectorAll('.mode-toggle .btn');
+      const historicalSection = document.querySelector('.historical-section');
+      const liveSection = document.querySelector('.live-section');
+      const historicalDescription = document.querySelector('.historical-description');
+      const liveDescription = document.querySelector('.live-description');
+      
+      // Ensure the date inputs exist before proceeding.
+      if (!startDateInput || !endDateInput) {
+        console.error("Date inputs not found in the DOM. Make sure elements with IDs 'start-date' and 'end-date' exist.");
+        return;
+      }
+      
+      // Default current mode (matches the active button in markup)
+      let currentMode = "historical";
 
-      // Vehicle types and their colors (passed from the backend as JSON strings)
-      // Use escapejs to handle quotes/special chars within the JSON string safely,
-      // then JSON.parse to convert the string into a JS object.
+      // Parse backend-passed JSON strings.
       const vehicleTypes = JSON.parse('{{ vehicle_types|safe|escapejs }}');
       const entryPoints = JSON.parse('{{ entry_points|safe|escapejs }}');
       
-      // Create the vehicle type legend
+      // Dynamically create vehicle type legend items.
       Object.entries(vehicleTypes).forEach(([key, value]) => {
-        const legendItem = document.createElement('div');
-        legendItem.className = 'legend-item';
+        const legendItem = document.createElement("div");
+        legendItem.className = "legend-item";
         
-        const colorBox = document.createElement('div');
-        colorBox.className = 'legend-color';
+        const colorBox = document.createElement("div");
+        colorBox.className = "legend-color";
         colorBox.style.backgroundColor = `rgb(${value.color[0]}, ${value.color[1]}, ${value.color[2]})`;
         
-        const label = document.createElement('span');
+        const label = document.createElement("span");
         label.textContent = value.name;
         
         legendItem.appendChild(colorBox);
@@ -274,75 +328,100 @@
         vehicleLegendItems.appendChild(legendItem);
       });
 
-      // Fetch data function (would interact with backend in a real app)
+      // Mode toggle functionality.
+      modeButtons.forEach(button => {
+        button.addEventListener("click", function () {
+          // Update button styles.
+          modeButtons.forEach(btn => {
+            btn.classList.remove("active", "btn-primary");
+            btn.classList.add("btn-outline-primary");
+          });
+          this.classList.remove("btn-outline-primary");
+          this.classList.add("active", "btn-primary");
+
+          const mode = this.dataset.mode;
+          currentMode = mode;
+          if (mode === "historical") {
+            historicalSection.classList.add("active");
+            liveSection.classList.remove("active");
+            historicalDescription.style.display = "block";
+            liveDescription.style.display = "none";
+            // Show the column layer and hide the heatmap.
+            deckInstance.setProps({
+              layers: [
+                baseMapLayer,
+                columnLayer.clone({ visible: true }),
+                heatmapLayer.clone({ visible: false })
+              ]
+            });
+          } else {
+            historicalSection.classList.remove("active");
+            liveSection.classList.add("active");
+            historicalDescription.style.display = "none";
+            liveDescription.style.display = "block";
+            // Hide the column layer and show the heatmap.
+            deckInstance.setProps({
+              layers: [
+                baseMapLayer,
+                columnLayer.clone({ visible: false }),
+                heatmapLayer.clone({ visible: true })
+              ]
+            });
+          }
+        });
+      });
+
+      // Function to simulate fetching historical data.
       function fetchData(startDate, endDate, callback) {
-        // In a real implementation, this would make an AJAX request to the backend
-        // For now, we'll simulate data based on our entry points
-        
         loadingElement.textContent = "Fetching data...";
         loadingElement.style.display = "block";
-        
-        // Simulate API delay
         setTimeout(() => {
           const vehicleTypeData = [];
-          
-          // Generate sample data for each entry point
+
           Object.entries(entryPoints).forEach(([name, coords]) => {
             const totalEntries = Math.floor(Math.random() * 14000) + 1000;
-            
-            // Create vehicle type breakdown
             let remainingEntries = totalEntries;
             const vehicleEntries = {};
-            
-            // Prepare all vehicle types for this entry point
-            Object.entries(vehicleTypes).forEach(([type, info], index) => {
-              // Distribute entries among vehicle types
-              // Last vehicle type gets all remaining entries to ensure total matches
+
+            Object.entries(vehicleTypes).forEach(([type, info], idx) => {
               let typeEntries;
-              if (index === Object.keys(vehicleTypes).length - 1) {
+              if (idx === Object.keys(vehicleTypes).length - 1) {
                 typeEntries = remainingEntries;
               } else {
-                // Random distribution
-                const proportion = Math.random() * 0.5 + (type === 'car' ? 0.3 : 0.05);
+                const proportion = Math.random() * 0.5 + (type === "car" ? 0.3 : 0.05);
                 typeEntries = Math.floor(totalEntries * proportion);
                 remainingEntries -= typeEntries;
               }
-              
               vehicleEntries[type] = typeEntries;
             });
-            
-            // Calculate offsets for side-by-side display
+
             const typeCount = Object.keys(vehicleTypes).length;
-            const offsetStep = 0.0003; // Small coordinate offset
-            
-            // Add each vehicle type as a separate data point
-            Object.entries(vehicleTypes).forEach(([type, info], index) => {
+            const offsetStep = 0.0003;
+            Object.entries(vehicleTypes).forEach(([type, info], idx) => {
               const typeEntries = vehicleEntries[type];
-              
               if (typeEntries > 0) {
-                // Calculate offset based on vehicle type order
                 const offset = (info.order - (typeCount - 1) / 2) * offsetStep;
-                
                 vehicleTypeData.push({
                   detection_region: name,
                   vehicle_type: type,
                   lat: coords[0],
                   lng: coords[1],
-                  lng_offset: coords[1] + offset, // Apply offset for side-by-side display
+                  lng_offset: coords[1] + offset,
                   crz_entries: typeEntries,
                   color: info.color,
-                  height: Math.min(typeEntries / 100, 500), // Limit height for visualization
-                  order: info.order
+                  order: info.order,
+                  entries_normalized: 0,
+                  height: 0
                 });
               }
             });
           });
           
-          // Calculate normalized values
-          const maxTypeEntries = Math.max(...vehicleTypeData.map(d => d.crz_entries));
+          // Normalize and calculate heights.
+          const maxEntries = Math.max(...vehicleTypeData.map(d => d.crz_entries));
           vehicleTypeData.forEach(d => {
-            d.entries_normalized = (d.crz_entries / maxTypeEntries) * 100;
-            d.height = d.entries_normalized * 50; // Scale height
+            d.entries_normalized = (d.crz_entries / maxEntries) * 100;
+            d.height = d.entries_normalized * 50;
           });
           
           loadingElement.style.display = "none";
@@ -350,26 +429,37 @@
         }, 1000);
       }
 
-      // Initialize the map with data
+      // Function to update the heatmap points (for live mode).
+      function updateScores(points) {
+        return points.map(point => {
+          point.previous_score = point.score;
+          point.score = Math.floor(Math.random() * 100);
+          return point;
+        });
+      }
+
+      // Declare layer and deck variables.
+      let columnLayer, heatmapLayer, baseMapLayer, deckInstance;
+
+      // Initialize the deck.gl map.
       function initializeMap(vehicleTypeData) {
         try {
-          // Filter out any invalid data points
-          const validVehicleData = vehicleTypeData.filter(d => 
-            d && 
-            typeof d.crz_entries === 'number' && 
-            !isNaN(d.crz_entries) && 
-            d.lat && 
+          const validData = vehicleTypeData.filter(d =>
+            d &&
+            typeof d.crz_entries === "number" &&
+            !isNaN(d.crz_entries) &&
+            d.lat &&
             (d.lng_offset || d.lng) &&
             d.vehicle_type
           );
 
-          // Define a ColumnLayer for vehicle type visualization
-          const columnLayer = new deck.ColumnLayer({
+          // Create the ColumnLayer.
+          columnLayer = new deck.ColumnLayer({
             id: "vehicle-type-layer",
-            data: validVehicleData,
+            data: validData,
             pickable: true,
             diskResolution: 12,
-            radius: 80, // Slightly smaller to accommodate multiple columns
+            radius: 80,
             extruded: true,
             getPosition: d => [d.lng_offset || d.lng, d.lat],
             getFillColor: d => d.color,
@@ -378,92 +468,94 @@
             visible: true
           });
 
-          // Define a TileLayer as the base map
-          const baseMapLayer = new deck.TileLayer({
+          // Create the HeatmapLayer.
+          heatmapLayer = new deck.HeatmapLayer({
+            id: "heatmap-layer",
+            data: randomPointsData,
+            getPosition: d => [d.lon, d.lat],
+            getWeight: d => d.score,
+            radiusPixels: 60,
+            intensity: 1,
+            visible: false
+          });
+
+          // Create the base map TileLayer.
+          baseMapLayer = new deck.TileLayer({
             id: "tile-layer",
             data: "https://cartodb-basemaps-a.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png",
             minZoom: 0,
             maxZoom: 19,
             tileSize: 256,
             renderSubLayers: props => {
-              const {
-                bbox: { west, south, east, north },
-              } = props.tile;
+              const { bbox: { west, south, east, north } } = props.tile;
               return new deck.BitmapLayer(props, {
                 data: null,
                 image: props.data,
-                bounds: [west, south, east, north],
+                bounds: [west, south, east, north]
               });
-            },
+            }
           });
 
-          // Create the deck.gl instance with the container element
-          const deckInstance = new deck.Deck({
+          // Create the Deck.gl instance.
+          deckInstance = new deck.Deck({
             container: mapContainer,
             initialViewState: {
               latitude: 40.736839,
               longitude: -73.989723,
               zoom: 11,
               pitch: 50,
-              bearing: 24.1,
+              bearing: 24.1
             },
             controller: true,
-            layers: [baseMapLayer, columnLayer],
+            layers: [
+              baseMapLayer,
+              columnLayer,
+              heatmapLayer
+            ],
             getTooltip: ({ object }) => {
               if (!object) return null;
-              
-              // Format tooltip with vehicle type information
-              const vehicleInfo = vehicleTypes[object.vehicle_type] || {name: object.vehicle_type};
-              const entries = object.crz_entries;
+              const vehicleInfo = vehicleTypes[object.vehicle_type] || { name: object.vehicle_type };
               return {
                 html: `<div style="background: white; padding: 8px; border-radius: 4px;">
                          <b>${object.detection_region || 'Unknown Location'}</b><br/>
                          Vehicle Type: ${vehicleInfo.name}<br/>
-                         Entries: ${entries && !isNaN(entries) ? entries.toLocaleString() : 'N/A'}
+                         Entries: ${object.crz_entries && !isNaN(object.crz_entries) ? object.crz_entries.toLocaleString() : 'N/A'}
                        </div>`
               };
             },
             style: {
-              position: 'absolute',
+              position: "absolute",
               top: 0,
               left: 0,
-              width: '100%',
-              height: '100%'
+              width: "100%",
+              height: "100%"
             },
             parent: mapContainer
           });
 
-          // Handle date filter
-          applyDateFilterBtn.addEventListener('click', function() {
+          // Date filter: update historical (column) data.
+          applyDateFilterBtn.addEventListener("click", function () {
             const startDate = startDateInput.value;
             const endDate = endDateInput.value;
-            
-            // Validate dates
             if (!startDate || !endDate) {
-              alert('Please select both start and end dates');
+              alert("Please select both start and end dates");
               return;
             }
-            
             if (new Date(startDate) > new Date(endDate)) {
-              alert('Start date must be before or equal to end date');
+              alert("Start date must be before or equal to end date");
               return;
             }
-            
-            // Fetch new data based on date range
-            fetchData(startDate, endDate, (newVehicleData) => {
-              // Update layers with new data
+            fetchData(startDate, endDate, newVehicleData => {
               deckInstance.setProps({
                 layers: [
                   baseMapLayer,
-                  columnLayer.clone({
-                    data: newVehicleData
-                  })
+                  columnLayer.clone({ data: newVehicleData, visible: true }),
+                  heatmapLayer.clone({ visible: false })
                 ]
               });
             });
           });
 
-          // Once the Deck instance is created, remove the loading element
           loadingElement.style.display = "none";
         } catch (error) {
           console.error("Error creating visualization:", error);
@@ -471,7 +563,35 @@
         }
       }
 
-      // Initial data load
+      async function fetchLiveHeatmapData() {
+        try {
+          const response = await fetch('{% url "congestion_analyzer:heatmap_points" %}');
+          if (!response.ok) {
+            throw new Error(`HTTP error ${response.status}`);
+          }
+          return await response.json();
+        } catch (error) {
+          console.error("Error fetching heatmap data:", error);
+          // Fall back to random data if there's an error
+          return updateScores(randomPointsData);
+        }
+      }
+
+      // Periodically update the heatmap if in live mode.
+      setInterval(() => {
+        if (currentMode === "live") {
+          const updatedPointsData = updateScores(randomPointsData);
+          deckInstance.setProps({
+            layers: [
+              baseMapLayer,
+              columnLayer.clone({ visible: false }),
+              heatmapLayer.clone({ data: updatedPointsData, visible: true })
+            ]
+          });
+        }
+      }, 2000);
+
+      // Initial data load.
       fetchData(startDateInput.value, endDateInput.value, initializeMap);
     });
   </script>
