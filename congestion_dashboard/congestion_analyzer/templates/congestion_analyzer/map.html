@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NYC Congestion Zone Map</title>
+
+  <!-- Bootstrap for basic styling -->
+  <link
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+    rel="stylesheet"
+  />
+
+  <!-- CSS for layout and forcing the deck.gl canvas to fill the container -->
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #f8f9fa;
+    }
+    .navbar {
+      background-color: #343a40;
+      padding: 0.5rem 1rem;
+    }
+    .navbar-brand {
+      color: white;
+      font-weight: 600;
+    }
+    .data-card {
+      background: white;
+      padding: 1rem;
+      border-radius: 6px;
+      margin-bottom: 1rem;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    }
+    .filter-card {
+      background: white;
+      padding: 1rem;
+      border-radius: 6px;
+      margin-bottom: 1rem;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    }
+    .footer {
+      padding: 1rem 0;
+      margin-top: 2rem;
+      text-align: center;
+      font-size: 0.85rem;
+      color: #6c757d;
+      border-top: 1px solid #dee2e6;
+    }
+    /* Map container should have a defined size and no inner children */
+    #map-container {
+      position: relative;
+      width: 100%;
+      height: 75vh;
+      border-radius: 8px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      overflow: hidden;
+      z-index: 1;
+    }
+    /* Make sure the deck.gl canvas fills the map container */
+    #map-container > canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100% !important;
+      height: 100% !important;
+      pointer-events: auto;
+    }
+    /* Loading element is positioned over the map, but with a higher z-index until hidden */
+    #loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+      padding: 15px 30px;
+      border-radius: 6px;
+      z-index: 10;
+    }
+    /* Legend styling */
+    .legend {
+      background: white;
+      border-radius: 4px;
+      padding: 10px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      margin-top: 1rem;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      margin-bottom: 5px;
+    }
+    .legend-color {
+      width: 20px;
+      height: 20px;
+      border-radius: 3px;
+      margin-right: 8px;
+    }
+    .range-slider {
+      width: 100%;
+      margin: 10px 0;
+    }
+    .date-range-container {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+    .date-input {
+      flex: 1;
+    }
+  </style>
+</head>
+<body>
+  <nav class="navbar navbar-dark mb-4">
+    <div class="container-fluid">
+      <span class="navbar-brand">NYC Congestion Zone Analysis</span>
+    </div>
+  </nav>
+
+  <div class="container-fluid">
+    <div class="row">
+      <div class="col-md-10 offset-md-1">
+        <div class="data-card">
+          <h2>NYC Congestion Zone Entry Points</h2>
+          <p>
+            Interactive visualization showing vehicle entries by type at major Manhattan congestion zone entry points.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Data Range Filter Widget -->
+    <div class="row">
+      <div class="col-md-10 offset-md-1">
+        <div class="filter-card">
+          <h4>Date Range Selection</h4>
+          
+          <!-- Data range selector -->
+          <h5>Select Date Range:</h5>
+          <div class="date-range-container">
+            <div class="date-input">
+              <label for="start-date">Start Date:</label>
+              <input 
+                type="date" 
+                id="start-date" 
+                class="form-control" 
+                value="{{ min_date|default:'2023-01-01' }}" 
+                min="{{ min_date|default:'2023-01-01' }}" 
+                max="{{ max_date|default:'2025-04-05' }}"
+              >
+            </div>
+            <div class="date-input">
+              <label for="end-date">End Date:</label>
+              <input 
+                type="date" 
+                id="end-date" 
+                class="form-control" 
+                value="{{ max_date|default:'2025-04-05' }}" 
+                min="{{ min_date|default:'2023-01-01' }}" 
+                max="{{ max_date|default:'2025-04-05' }}"
+              >
+            </div>
+            <button id="apply-date-filter" class="btn btn-primary">Apply</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row position-relative">
+      <div class="col-md-10 offset-md-1 position-relative">
+        <!-- Map container is kept completely empty -->
+        <div id="map-container"></div>
+        <!-- Loading element is overlaid on top -->
+        <div id="loading">Loading visualization...</div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="col-md-10 offset-md-1">
+        <!-- Legend for the visualization -->
+        <div class="legend">
+          <h5>Vehicle Types</h5>
+          <div id="vehicle-legend-items">
+            <!-- Vehicle type legend items will be dynamically inserted here -->
+          </div>
+        </div>
+
+        <div class="data-card">
+          <h4>About This Map</h4>
+          <p>
+            This visualization displays traffic volume by vehicle type at key entry points to the Manhattan Congestion Zone.
+          </p>
+          <p>
+            Each column represents a specific vehicle category, with the height proportional to the number of entries for that 
+            vehicle type at each entry point. Vehicle types are displayed side by side at each location for easy comparison.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <div class="container">
+      <p>NYC Congestion Zone Analysis Dashboard &copy; 2025</p>
+    </div>
+  </footer>
+
+  <!-- Load deck.gl main library -->
+  <script src="https://unpkg.com/deck.gl@8.8.0/dist.min.js"></script>
+  <!-- Load the geo-layers module for TileLayer -->
+  <script src="https://unpkg.com/@deck.gl/geo-layers@8.8.0/dist.min.js"></script>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const loadingElement = document.getElementById("loading");
+      const mapContainer = document.getElementById("map-container");
+      const vehicleLegendItems = document.getElementById("vehicle-legend-items");
+      const startDateInput = document.getElementById("start-date");
+      const endDateInput = document.getElementById("end-date");
+      const applyDateFilterBtn = document.getElementById("apply-date-filter");
+
+      // Vehicle types and their colors (passed from the backend)
+      const vehicleTypes = {{ vehicle_types|safe|default:"{}" }};
+      const entryPoints = {{ entry_points|safe|default:"{}" }};
+      
+      // Create the vehicle type legend
+      Object.entries(vehicleTypes).forEach(([key, value]) => {
+        const legendItem = document.createElement('div');
+        legendItem.className = 'legend-item';
+        
+        const colorBox = document.createElement('div');
+        colorBox.className = 'legend-color';
+        colorBox.style.backgroundColor = `rgb(${value.color[0]}, ${value.color[1]}, ${value.color[2]})`;
+        
+        const label = document.createElement('span');
+        label.textContent = value.name;
+        
+        legendItem.appendChild(colorBox);
+        legendItem.appendChild(label);
+        vehicleLegendItems.appendChild(legendItem);
+      });
+
+      // Fetch data function (would interact with backend in a real app)
+      function fetchData(startDate, endDate, callback) {
+        // In a real implementation, this would make an AJAX request to the backend
+        // For now, we'll simulate data based on our entry points
+        
+        loadingElement.textContent = "Fetching data...";
+        loadingElement.style.display = "block";
+        
+        // Simulate API delay
+        setTimeout(() => {
+          const vehicleTypeData = [];
+          
+          // Generate sample data for each entry point
+          Object.entries(entryPoints).forEach(([name, coords]) => {
+            const totalEntries = Math.floor(Math.random() * 14000) + 1000;
+            
+            // Create vehicle type breakdown
+            let remainingEntries = totalEntries;
+            const vehicleEntries = {};
+            
+            // Prepare all vehicle types for this entry point
+            Object.entries(vehicleTypes).forEach(([type, info], index) => {
+              // Distribute entries among vehicle types
+              // Last vehicle type gets all remaining entries to ensure total matches
+              let typeEntries;
+              if (index === Object.keys(vehicleTypes).length - 1) {
+                typeEntries = remainingEntries;
+              } else {
+                // Random distribution
+                const proportion = Math.random() * 0.5 + (type === 'car' ? 0.3 : 0.05);
+                typeEntries = Math.floor(totalEntries * proportion);
+                remainingEntries -= typeEntries;
+              }
+              
+              vehicleEntries[type] = typeEntries;
+            });
+            
+            // Calculate offsets for side-by-side display
+            const typeCount = Object.keys(vehicleTypes).length;
+            const offsetStep = 0.0003; // Small coordinate offset
+            
+            // Add each vehicle type as a separate data point
+            Object.entries(vehicleTypes).forEach(([type, info], index) => {
+              const typeEntries = vehicleEntries[type];
+              
+              if (typeEntries > 0) {
+                // Calculate offset based on vehicle type order
+                const offset = (info.order - (typeCount - 1) / 2) * offsetStep;
+                
+                vehicleTypeData.push({
+                  detection_region: name,
+                  vehicle_type: type,
+                  lat: coords[0],
+                  lng: coords[1],
+                  lng_offset: coords[1] + offset, // Apply offset for side-by-side display
+                  crz_entries: typeEntries,
+                  color: info.color,
+                  height: Math.min(typeEntries / 100, 500), // Limit height for visualization
+                  order: info.order
+                });
+              }
+            });
+          });
+          
+          // Calculate normalized values
+          const maxTypeEntries = Math.max(...vehicleTypeData.map(d => d.crz_entries));
+          vehicleTypeData.forEach(d => {
+            d.entries_normalized = (d.crz_entries / maxTypeEntries) * 100;
+            d.height = d.entries_normalized * 50; // Scale height
+          });
+          
+          loadingElement.style.display = "none";
+          callback(vehicleTypeData);
+        }, 1000);
+      }
+
+      // Initialize the map with data
+      function initializeMap(vehicleTypeData) {
+        try {
+          // Filter out any invalid data points
+          const validVehicleData = vehicleTypeData.filter(d => 
+            d && 
+            typeof d.crz_entries === 'number' && 
+            !isNaN(d.crz_entries) && 
+            d.lat && 
+            (d.lng_offset || d.lng) &&
+            d.vehicle_type
+          );
+
+          // Define a ColumnLayer for vehicle type visualization
+          const columnLayer = new deck.ColumnLayer({
+            id: "vehicle-type-layer",
+            data: validVehicleData,
+            pickable: true,
+            diskResolution: 12,
+            radius: 80, // Slightly smaller to accommodate multiple columns
+            extruded: true,
+            getPosition: d => [d.lng_offset || d.lng, d.lat],
+            getFillColor: d => d.color,
+            getElevation: d => d.height,
+            elevationScale: 1,
+            visible: true
+          });
+
+          // Define a TileLayer as the base map
+          const baseMapLayer = new deck.TileLayer({
+            id: "tile-layer",
+            data: "https://cartodb-basemaps-a.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png",
+            minZoom: 0,
+            maxZoom: 19,
+            tileSize: 256,
+            renderSubLayers: props => {
+              const {
+                bbox: { west, south, east, north },
+              } = props.tile;
+              return new deck.BitmapLayer(props, {
+                data: null,
+                image: props.data,
+                bounds: [west, south, east, north],
+              });
+            },
+          });
+
+          // Create the deck.gl instance with the container element
+          const deckInstance = new deck.Deck({
+            container: mapContainer,
+            initialViewState: {
+              latitude: 40.736839,
+              longitude: -73.989723,
+              zoom: 11,
+              pitch: 50,
+              bearing: 24.1,
+            },
+            controller: true,
+            layers: [baseMapLayer, columnLayer],
+            getTooltip: ({ object }) => {
+              if (!object) return null;
+              
+              // Format tooltip with vehicle type information
+              const vehicleInfo = vehicleTypes[object.vehicle_type] || {name: object.vehicle_type};
+              const entries = object.crz_entries;
+              return {
+                html: `<div style="background: white; padding: 8px; border-radius: 4px;">
+                         <b>${object.detection_region || 'Unknown Location'}</b><br/>
+                         Vehicle Type: ${vehicleInfo.name}<br/>
+                         Entries: ${entries && !isNaN(entries) ? entries.toLocaleString() : 'N/A'}
+                       </div>`
+              };
+            },
+            style: {
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%'
+            },
+            parent: mapContainer
+          });
+
+          // Handle date filter
+          applyDateFilterBtn.addEventListener('click', function() {
+            const startDate = startDateInput.value;
+            const endDate = endDateInput.value;
+            
+            // Validate dates
+            if (!startDate || !endDate) {
+              alert('Please select both start and end dates');
+              return;
+            }
+            
+            if (new Date(startDate) > new Date(endDate)) {
+              alert('Start date must be before or equal to end date');
+              return;
+            }
+            
+            // Fetch new data based on date range
+            fetchData(startDate, endDate, (newVehicleData) => {
+              // Update layers with new data
+              deckInstance.setProps({
+                layers: [
+                  baseMapLayer,
+                  columnLayer.clone({
+                    data: newVehicleData
+                  })
+                ]
+              });
+            });
+          });
+
+          // Once the Deck instance is created, remove the loading element
+          loadingElement.style.display = "none";
+        } catch (error) {
+          console.error("Error creating visualization:", error);
+          loadingElement.textContent = "Error loading map. Please try again.";
+        }
+      }
+
+      // Initial data load
+      fetchData(startDateInput.value, endDateInput.value, initializeMap);
+    });
+  </script>
+</body>
+</html>
