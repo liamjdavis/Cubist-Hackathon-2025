@@ -30,6 +30,85 @@ A comprehensive visualization and analysis tool for monitoring and analyzing tra
 
 ## Technical Stack
 
+### Diagram
+```mermaid
+graph TD
+    subgraph Frontend
+        UI[User Interface]
+        Map[Map Visualization]
+        Dashboard[Dashboard]
+    end
+
+    subgraph Backend
+        Django[Django Server]
+        DataProcessor[Data Processor]
+        StreamHandler[Stream Handler]
+    end
+
+    subgraph Data Sources
+        MTA[MTA Data API]
+        RT[Real-time Stream]
+        DB[(Database)]
+    end
+
+    %% Frontend connections
+    UI --> Map
+    UI --> Dashboard
+    Map --> Backend
+    Dashboard --> Backend
+
+    %% Backend connections
+    Django --> DataProcessor
+    Django --> StreamHandler
+    DataProcessor --> DB
+    StreamHandler --> RT
+
+    %% Data source connections
+    MTA --> DataProcessor
+    RT --> StreamHandler
+    DB --> DataProcessor
+```
+
+## Data Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant UI
+    participant Django
+    participant DataProcessor
+    participant StreamHandler
+    participant DB
+    participant MTA
+    participant RT
+
+    %% Historical Data Flow
+    User->>UI: Select Date Range
+    UI->>Django: Request Historical Data
+    Django->>DataProcessor: Process Query
+    DataProcessor->>DB: Fetch Data
+    DB-->>DataProcessor: Return Data
+    DataProcessor-->>Django: Processed Data
+    Django-->>UI: JSON Response
+    UI->>Map: Update Visualization
+
+    %% Real-time Data Flow
+    loop Every 2 Seconds
+        StreamHandler->>RT: Request Updates
+        RT-->>StreamHandler: New Data
+        StreamHandler->>Django: Push Updates
+        Django-->>UI: WebSocket Update
+        UI->>Map: Update Heatmap
+    end
+
+    %% MTA Data Integration
+    loop Periodic Updates
+        DataProcessor->>MTA: Request New Data
+        MTA-->>DataProcessor: Latest Data
+        DataProcessor->>DB: Store Updates
+    end
+```
+
 - **Frontend**:
   - HTML5, CSS3, JavaScript
   - [deck.gl](https://deck.gl/) for interactive map visualizations
@@ -59,97 +138,7 @@ This tool was developed to address the critical need for data-driven insights in
 - **Performance Measurement**: Evaluate the effectiveness of congestion pricing policies through quantifiable metrics
 
 The tool serves multiple stakeholders including transportation planners, city officials, researchers, and the general public by transforming complex traffic data into actionable intelligence. By revealing both obvious and subtle patterns in traffic behavior, it provides crucial insights for optimizing traffic flow, reducing congestion, and evaluating the environmental and economic impacts of congestion pricing initiatives.
-```mermaid
-graph TD
-    %% Data Layer
-    subgraph "Database"
-        DB[PostgreSQL/SQLite]
-        VM[VehicleEntry Model] --> DB
-    end
 
-    %% Models
-    subgraph "Models"
-        VM --> |contains| Fields["
-            - toll_date
-            - toll_hour
-            - vehicle_class
-            - detection_group
-            - detection_region
-            - crz_entries
-            - etc.
-        "]
-    end
-
-    %% Core Components
-    subgraph "Core Components"
-        AD[AnomalyDetector]
-        CU[Cache Utilities]
-        DDSk[DDSketch Library]
-    end
-
-    %% Views
-    subgraph "Views"
-        IV[index View]
-        AV[anomalies View]
-        GAV[get_anomalies API]
-        GAHV[get_anomaly_history API]
-    end
-
-    %% Templates
-    subgraph "Templates"
-        IT[index.html]
-        AT[anomalies.html]
-        BT[base.html]
-        INCL[includes/
-            _header.html
-            _controls.html
-            _stats.html
-        ]
-    end
-
-    %% JS Components
-    subgraph "JavaScript Components"
-        PS[Perspective Viewer]
-        Filters[Region/Vehicle Filters]
-        Charts[Interactive Charts]
-        LiveUpd[Live Updates]
-    end
-
-    %% Relationships
-    VM --> AD
-    AD --> DDSk
-    CU --> VM
-    
-    IV --> CU
-    IV --> |renders| IT
-    AV --> CU
-    AV --> AD
-    AV --> |renders| AT
-    
-    GAV --> AD
-    GAV --> VM
-    GAHV --> AD
-    
-    IT --> BT
-    AT --> BT
-    IT --> INCL
-    
-    IT --> PS
-    IT --> Filters
-    IT --> Charts
-    IT --> LiveUpd
-    AT --> Charts
-    AT --> Filters
-
-    %% Data Flow
-    DB --> |raw data| VM
-    VM --> |processed for dashboard| CU
-    CU --> |cached data| IV
-    VM --> |updated with new entries| AD
-    AD --> |anomalies detected| AV
-    AD --> |live anomalies| GAV
-    AD --> |historical anomalies| GAHV
-```
 ![Historic New York](images/new-york-city-1979-1.jpg)
 
 ## Future Improvements
