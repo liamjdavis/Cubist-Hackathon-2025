@@ -114,6 +114,10 @@ DATE_RANGE_CACHE_KEY = 'data_date_range_v2'
 # Cache timeout (in seconds) - e.g., 1 hour
 CACHE_TIMEOUT = 3600
 
+# Add these new cache keys with your existing ones
+ANOMALIES_CACHE_KEY = 'anomalies_data_v1'
+ANOMALY_DATE_RANGE_KEY = 'anomaly_date_range_v1'
+
 def get_base_vehicle_data():
     """
     Fetches vehicle data from the database or cache.
@@ -548,8 +552,78 @@ def get_map_data():
         import traceback
         traceback.print_exc()
         # Return defaults on error, don't cache error state for map
-        return default_return_data
+        return default_return_data    
 
+def get_cached_anomalies():
+    """
+    Gets anomalies data from cache or generates it.
+    Returns a tuple (anomalies_json, first_date, last_date, total_entries)
+    """
+    # Check if anomaly data is cached
+    cached_anomalies = cache.get(ANOMALIES_CACHE_KEY)
+    cached_date_range = cache.get(ANOMALY_DATE_RANGE_KEY)
+    
+    if cached_anomalies and cached_date_range:
+        print("--- Cache Hit: Anomalies data ---")
+        return cached_anomalies, cached_date_range['first_date'], cached_date_range['last_date'], cached_date_range['total_entries']
+    
+    print("--- Cache Miss: Generating anomalies data ---")
+    
+    # Import needed here to avoid circular import
+    from .anomaly_detection import AnomalyDetector
+    
+    # Create a fresh anomaly detector for processing
+    anomaly_detector = AnomalyDetector()
+    
+    try:
+        # Get all entries from the database
+        from .models import VehicleEntry
+        entries = VehicleEntry.objects.all().order_by('toll_date', 'toll_hour', 'minute_of_hour')
+        total_entries = entries.count()
+        
+        if total_entries == 0:
+            print("No entries found in database for anomaly detection")
+            return "[]", None, None, 0
+        
+        # Process all entries through the anomaly detector
+        for entry in entries:
+            anomaly_detector.update(entry)
+        
+        # Detect anomalies
+        current_anomalies = anomaly_detector.detect_anomalies()
+        
+        # Get date range
+        first_date = entries.first().toll_date
+        last_date = entries.last().toll_date
+        
+        # Convert to JSON string
+        from django.core.serializers.json import DjangoJSONEncoder
+        anomalies_json = json.dumps(current_anomalies, cls=DjangoJSONEncoder)
+        
+        # Cache the results
+        cache.set(ANOMALIES_CACHE_KEY, anomalies_json, CACHE_TIMEOUT)
+        date_range_data = {
+            'first_date': first_date,
+            'last_date': last_date,
+            'total_entries': total_entries
+        }
+        cache.set(ANOMALY_DATE_RANGE_KEY, date_range_data, CACHE_TIMEOUT)
+        
+        return anomalies_json, first_date, last_date, total_entries
+        
+    except Exception as e:
+        print(f"Error generating anomalies data: {e}")
+        import traceback
+        traceback.print_exc()
+        return "[]", None, None, 0
+
+def clear_anomaly_cache():
+    """Clear the anomaly cache specifically"""
+    cache.delete(ANOMALIES_CACHE_KEY)
+    cache.delete(ANOMALY_DATE_RANGE_KEY)
+    print("--- Cleared Anomaly Data Cache ---")
+
+# Update the existing clear_vehicle_cache function to also clear anomaly cache
 def clear_vehicle_cache():
     """Utility function to clear all related cache entries."""
     keys_to_clear = [
@@ -557,8 +631,10 @@ def clear_vehicle_cache():
         STATS_CACHE_KEY,
         AGG_JSON_CACHE_KEY,
         MAP_DATA_CACHE_KEY,
-        DATE_RANGE_CACHE_KEY
+        DATE_RANGE_CACHE_KEY,
+        ANOMALIES_CACHE_KEY,        # Add the anomaly keys here
+        ANOMALY_DATE_RANGE_KEY
     ]
     for key in keys_to_clear:
         cache.delete(key)
-    print("--- Cleared Vehicle Data Cache ---") 
+    print("--- Cleared All Cache Data ---")

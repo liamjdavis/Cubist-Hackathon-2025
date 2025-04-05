@@ -4,7 +4,7 @@ import json # Added for potential use, though context builder might handle it
 from django.http import JsonResponse
 
 # Import the caching utility function
-from .cache_utils import get_dashboard_data, clear_vehicle_cache
+from .cache_utils import get_dashboard_data, clear_vehicle_cache, clear_anomaly_cache, get_cached_anomalies
 from .anomaly_detection import AnomalyDetector
 from .models import VehicleEntry
 from datetime import datetime, timedelta, date
@@ -86,12 +86,16 @@ def index(request):
 def anomalies(request):
     """View function for the anomaly detection page."""
     try:
-        print("Starting anomaly detection...")
+        print("Starting anomaly detection with cache...")
         
-        # Get all data from the database
-        entries = VehicleEntry.objects.all().order_by('toll_date', 'toll_hour', 'minute_of_hour')
-        total_entries = entries.count()
-        print(f"Found {total_entries} entries in database")
+        # Check if we need to force refresh
+        force_refresh = request.GET.get('refresh', 'false').lower() == 'true'
+        if force_refresh:
+            print("--- Forcing anomaly cache refresh as requested ---")
+            clear_anomaly_cache()
+        
+        # Get data from cache or generate it
+        anomalies_json, first_date, last_date, total_entries = get_cached_anomalies()
         
         if total_entries == 0:
             print("No entries found in database")
@@ -104,29 +108,15 @@ def anomalies(request):
             }
             return render(request, 'congestion_analyzer/anomalies.html', context)
         
-        # Update anomaly detector with all historical data
-        print("Updating anomaly detector with historical data...")
-        for entry in entries:
-            anomaly_detector.update(entry)
-        
-        # Get current anomalies
-        print("Detecting anomalies...")
-        current_anomalies = anomaly_detector.detect_anomalies()
-        print(f"Detected {len(current_anomalies)} anomalies")
-        
-        # Get date range for display
-        first_date = entries.first().toll_date
-        last_date = entries.last().toll_date
-        
-        # Prepare context - use the custom encoder for dates
+        # Prepare context with cached data
         context = {
-            'anomalies': json.dumps(current_anomalies, cls=CustomJSONEncoder),
+            'anomalies': anomalies_json,  # Already a JSON string from cache
             'current_time': timezone.now(),
             'total_entries': total_entries,
             'date_range': f"{first_date} to {last_date}"
         }
         
-        print("Rendering anomalies page...")
+        print("Rendering anomalies page with cached data...")
         return render(request, 'congestion_analyzer/anomalies.html', context)
         
     except Exception as e:
@@ -142,7 +132,7 @@ def anomalies(request):
             'error_message': f'Error loading anomalies: {str(e)}'
         }
         return render(request, 'congestion_analyzer/anomalies.html', context)
-
+    
 def get_anomalies(request):
     """API endpoint to get current anomalies from the last 10 minutes"""
     try:
