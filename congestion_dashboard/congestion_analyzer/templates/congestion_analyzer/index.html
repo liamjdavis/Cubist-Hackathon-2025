@@ -141,6 +141,37 @@
         .view-toggle button:not(.active) {
             color: #0d6efd;
         }
+        
+        .live-indicator {
+            margin-left: auto;
+        }
+        .live-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #28a745;
+            margin-right: 5px;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.3; }
+            100% { opacity: 1; }
+        }
+        .badge.pulse {
+            animation: badgePulse 1s;
+        }
+        @keyframes badgePulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); }
+        }
+        #last-updated {
+            font-size: 10px;
+            display: block;
+            margin-top: 4px;
+        }
     </style>
 </head>
 <body>
@@ -196,6 +227,19 @@
                 <div class="stat-number" id="avg-hourly">0</div>
                 <div class="stat-label">Avg. Hourly</div>
             </div>
+            <div class="stat-card live-indicator">
+                <div class="d-flex align-items-center">
+                    <span class="badge bg-success me-1">LIVE</span>
+                    <span class="small text-muted" id="last-updated">Never updated</span>
+                </div>
+                <div class="stat-label">
+                    Metrics Status
+                    <div class="form-check form-switch mt-1">
+                        <input class="form-check-input" type="checkbox" id="liveToggle" checked>
+                        <label class="form-check-label small" for="liveToggle">Auto-refresh</label>
+                    </div>
+                </div>
+            </div>
         </div>
         
         <perspective-viewer id="viewer"></perspective-viewer>
@@ -214,6 +258,13 @@
         import "https://cdn.jsdelivr.net/npm/@finos/perspective-viewer-d3fc@3.4.0/dist/cdn/perspective-viewer-d3fc.js";
         import perspective from "https://cdn.jsdelivr.net/npm/@finos/perspective@3.4.0/dist/cdn/perspective.js";
         
+        // Live metrics streaming configuration
+        const API_ENDPOINT = 'https://data.ny.gov/resource/t6yz-b64h.json';
+        const METRICS_REFRESH_INTERVAL = 180000; // 3 minutes (was 30 seconds)
+        
+        console.debug('[Metrics] Metrics module initialized with refresh interval:', METRICS_REFRESH_INTERVAL);
+        console.debug('[Metrics] API endpoint:', API_ENDPOINT);
+        
         // Get pre-aggregated data from server
         const aggData = JSON.parse('{{ agg_json|escapejs }}');
         console.log(`Received pre-aggregated data with ${aggData.length} records`);
@@ -229,11 +280,199 @@
         const dailyView = document.getElementById('daily-view');
         const monthlyView = document.getElementById('monthly-view');
         const avgHourly = document.getElementById('avg-hourly');
+        const totalEntries = document.getElementById('total-entries');
+        const totalVolume = document.getElementById('total-volume');
+        const regionCount = document.getElementById('region-count');
         
         // Current view state
         let currentView = 'hourly';
         let worker;
         let table;
+        
+        // Function to fetch live metrics from NY API
+        async function fetchLiveMetrics() {
+            // Check if live toggle is enabled
+            const liveToggle = document.getElementById('liveToggle');
+            if (liveToggle && !liveToggle.checked) {
+                console.debug('[Metrics] Live updates paused by user toggle');
+                // If disabled, schedule next check but don't fetch data
+                setTimeout(fetchLiveMetrics, METRICS_REFRESH_INTERVAL);
+                return;
+            }
+            
+            console.debug('[Metrics] Starting metrics refresh cycle');
+            
+            try {
+                // Update status for metrics only - with safer element selection
+                const metricsStatus = document.createElement('span');
+                metricsStatus.style.fontSize = '10px';
+                metricsStatus.style.marginLeft = '5px';
+                metricsStatus.style.color = '#6c757d';
+                metricsStatus.textContent = '(refreshing)';
+                metricsStatus.id = 'metrics-refresh-status';
+                
+                // Safer approach to adding the status indicator
+                let statusContainer = document.getElementById('metrics-status-container');
+                if (!statusContainer) {
+                    // Create a container if it doesn't exist yet
+                    statusContainer = document.createElement('div');
+                    statusContainer.id = 'metrics-status-container';
+                    statusContainer.style.position = 'absolute';
+                    statusContainer.style.bottom = '5px';
+                    statusContainer.style.right = '5px';
+                    statusContainer.style.zIndex = '1000';
+                    document.getElementById('stats').appendChild(statusContainer);
+                }
+                
+                // Remove status indicator safely
+                if (statusContainer) {
+                    while (statusContainer.firstChild) {
+                        statusContainer.removeChild(statusContainer.firstChild);
+                    }
+                }
+                
+                // Add new status
+                statusContainer.appendChild(metricsStatus);
+                
+                // Build API query with parameters for optimized fetching
+                // Using SoQL to limit and aggregate data server-side
+                const params = new URLSearchParams({
+                    '$select': 'vehicle_class, detection_region, sum(crz_entries) as total_entries, count(*) as record_count',
+                    '$group': 'vehicle_class, detection_region',
+                    '$where': 'crz_entries > 0',  // Filter out zeros for performance
+                    '$limit': '10000',
+                    '$order': 'vehicle_class'     // Ordering helps with client-side processing
+                });
+                
+                console.debug(`[Metrics] Fetching data from API with params: ${params.toString()}`);
+                
+                // Track API response time
+                const apiStartTime = performance.now();
+                console.time('metrics-api-fetch');
+                const response = await fetch(`${API_ENDPOINT}?${params}`);
+                
+                if (!response.ok) {
+                    throw new Error(`API error: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                const apiEndTime = performance.now();
+                const apiResponseTime = Math.round(apiEndTime - apiStartTime);
+                console.timeEnd('metrics-api-fetch');
+                console.debug(`[Metrics] API response time: ${apiResponseTime}ms`);
+                
+                // Update debug panel with response time and record count if it exists
+                if (document.getElementById('debug-response-time')) {
+                    document.getElementById('debug-response-time').textContent = `${apiResponseTime}ms`;
+                    document.getElementById('debug-records-count').textContent = data.length;
+                }
+                
+                console.debug(`[Metrics] Received ${data.length} records from API`);
+                
+                // Log a sample of the data for debugging
+                if (data.length > 0) {
+                    console.debug('[Metrics] Sample data record:', data[0]);
+                }
+                
+                // Update metrics
+                if (data && data.length > 0) {
+                    console.time('metrics-update');
+                    console.debug('[Metrics] Processing metrics calculations');
+                    
+                    // Calculate total records
+                    const totalRecords = data.reduce((sum, item) => sum + parseInt(item.record_count || 0), 0);
+                    console.debug(`[Metrics] Total records calculated: ${totalRecords}`);
+                    totalEntries.textContent = totalRecords.toLocaleString();
+                    
+                    // Sum all entries
+                    const sumEntries = data.reduce((sum, item) => sum + parseInt(item.total_entries || 0), 0);
+                    console.debug(`[Metrics] Total vehicle entries calculated: ${sumEntries}`);
+                    totalVolume.textContent = sumEntries.toLocaleString();
+                    
+                    // Count unique regions
+                    const uniqueRegions = new Set(data.map(item => item.detection_region)).size;
+                    console.debug(`[Metrics] Unique regions found: ${uniqueRegions}`);
+                    regionCount.textContent = uniqueRegions.toLocaleString();
+                    
+                    // Calculate average hourly (assuming 24-hour distribution)
+                    const hourlyAvg = Math.round(sumEntries / 24);
+                    console.debug(`[Metrics] Average hourly calculated: ${hourlyAvg}`);
+                    avgHourly.textContent = hourlyAvg.toLocaleString();
+                    
+                    // Add visual feedback for fresh data
+                    document.querySelectorAll('.stat-number').forEach(el => {
+                        el.style.transition = 'color 0.5s';
+                        el.style.color = '#0d9e5f'; // Briefly change color
+                        setTimeout(() => {
+                            el.style.color = '#0d6efd'; // Return to original color
+                        }, 800);
+                    });
+                    
+                    console.timeEnd('metrics-update');
+                    console.debug('[Metrics] UI updated with new values');
+                    
+                    // Update last updated timestamp
+                    updateLastUpdatedTime();
+                } else {
+                    console.warn('[Metrics] Received empty dataset from API');
+                }
+                
+                // Remove status indicator
+                if (metricsStatus.parentNode) {
+                    metricsStatus.parentNode.removeChild(metricsStatus);
+                }
+                
+                // Make the LIVE indicator pulse
+                const liveIndicator = document.querySelector('.badge.bg-success');
+                if (liveIndicator) {
+                    liveIndicator.classList.add('pulse');
+                    setTimeout(() => {
+                        liveIndicator.classList.remove('pulse');
+                    }, 1000);
+                }
+                
+                console.debug(`[Metrics] Refresh cycle complete, next update in ${METRICS_REFRESH_INTERVAL/1000} seconds`);
+                
+            } catch (error) {
+                console.error('[Metrics] Error fetching live metrics:', error);
+                console.debug('[Metrics] API request failed with error:', error.message);
+                // Add error indicator to stats section without disrupting main visualization
+                const errorIndicator = document.createElement('div');
+                errorIndicator.className = 'mt-1 small text-danger';
+                errorIndicator.textContent = 'Metrics refresh failed';
+                errorIndicator.style.fontSize = '10px';
+                
+                const statsSection = document.getElementById('stats');
+                statsSection.appendChild(errorIndicator);
+                console.debug('[Metrics] Error indicator added to the DOM');
+                
+                // Update the LIVE indicator to show error
+                const liveIndicator = document.querySelector('.badge.bg-success');
+                if (liveIndicator) {
+                    liveIndicator.className = 'badge bg-danger me-1';
+                    liveIndicator.textContent = 'ERROR';
+                    console.debug('[Metrics] Live indicator changed to ERROR state');
+                    
+                    // Reset after 10 seconds
+                    setTimeout(() => {
+                        liveIndicator.className = 'badge bg-success me-1';
+                        liveIndicator.textContent = 'LIVE';
+                        console.debug('[Metrics] Live indicator reset to LIVE state after timeout');
+                    }, 10000);
+                }
+                
+                // Auto-remove error indicator after 5 seconds
+                setTimeout(() => {
+                    if (errorIndicator.parentNode) {
+                        errorIndicator.parentNode.removeChild(errorIndicator);
+                        console.debug('[Metrics] Error indicator removed from DOM after timeout');
+                    }
+                }, 5000);
+            }
+            
+            // Schedule next update
+            setTimeout(fetchLiveMetrics, METRICS_REFRESH_INTERVAL);
+        }
         
         // Update loading status
         function updateStatus(message, isLoading = true) {
@@ -570,6 +809,163 @@
         
         // Start the dashboard
         initDashboard();
+        
+        // Function to update the last updated timestamp
+        function updateLastUpdatedTime() {
+            const now = new Date();
+            const timeString = now.toLocaleTimeString();
+            document.getElementById('last-updated').textContent = `Last update: ${timeString}`;
+            console.debug(`[Metrics] Last updated timestamp set to: ${timeString}`);
+        }
+        
+        // Start live metrics streaming after dashboard is ready
+        setTimeout(() => {
+            console.debug('[Metrics] Initializing live metrics stream');
+            fetchLiveMetrics();
+            console.log('Live metrics streaming started');
+            updateLastUpdatedTime();
+        }, 2000); // Give the main dashboard 2 seconds to load first
+        
+        // Add event listener for live toggle
+        document.getElementById('liveToggle').addEventListener('change', function() {
+            if (this.checked) {
+                console.debug('[Metrics] Live updates enabled by user');
+                // Immediately fetch metrics if toggled on
+                fetchLiveMetrics();
+                const liveIndicator = document.querySelector('.badge');
+                liveIndicator.className = 'badge bg-success me-1';
+                liveIndicator.textContent = 'LIVE';
+            } else {
+                console.debug('[Metrics] Live updates disabled by user');
+                // Update indicator when toggled off
+                const liveIndicator = document.querySelector('.badge');
+                liveIndicator.className = 'badge bg-secondary me-1';
+                liveIndicator.textContent = 'PAUSED';
+            }
+        });
+        
+        console.debug('[Metrics] Debug mode enabled for metrics module');
+        
+        // Create a debug button in the header if in development mode
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            console.debug('[Metrics] Development environment detected, adding debug controls');
+            const debugButton = document.createElement('button');
+            debugButton.className = 'btn btn-sm btn-outline-light ms-3';
+            debugButton.textContent = 'Trigger Metrics Update';
+            debugButton.addEventListener('click', () => {
+                console.debug('[Metrics] Manual update triggered');
+                fetchLiveMetrics();
+            });
+            
+            const debugPanelButton = document.createElement('button');
+            debugPanelButton.className = 'btn btn-sm btn-warning ms-2';
+            debugPanelButton.textContent = 'Debug Panel';
+            debugPanelButton.addEventListener('click', toggleDebugPanel);
+            
+            document.querySelector('#header h4').appendChild(debugButton);
+            document.querySelector('#header h4').appendChild(debugPanelButton);
+            
+            // Create debug panel element
+            const panel = document.createElement('div');
+            panel.id = 'debug-panel';
+            panel.innerHTML = `
+                <div id="debug-panel-header">
+                    <span>Metrics Debug Panel</span>
+                    <span id="debug-panel-close">×</span>
+                </div>
+                <div class="debug-metrics">
+                    <div class="debug-metric-label">API Endpoint:</div>
+                    <div class="debug-metric-value">${API_ENDPOINT}</div>
+                    <div class="debug-metric-label">Refresh Interval:</div>
+                    <div class="debug-metric-value">${METRICS_REFRESH_INTERVAL}ms</div>
+                    <div class="debug-metric-label">Auto Refresh:</div>
+                    <div class="debug-metric-value" id="debug-auto-refresh">Enabled</div>
+                    <div class="debug-metric-label">Last API Call:</div>
+                    <div class="debug-metric-value" id="debug-last-call">Never</div>
+                    <div class="debug-metric-label">Last Response Time:</div>
+                    <div class="debug-metric-value" id="debug-response-time">-</div>
+                    <div class="debug-metric-label">Records Fetched:</div>
+                    <div class="debug-metric-value" id="debug-records-count">0</div>
+                </div>
+                <div id="debug-panel-log"></div>
+            `;
+            document.body.appendChild(panel);
+            
+            // Add close button handler
+            document.getElementById('debug-panel-close').addEventListener('click', toggleDebugPanel);
+            
+            // Override console.debug to capture metrics logs
+            const originalDebug = console.debug;
+            console.debug = function() {
+                // Call original console.debug
+                originalDebug.apply(console, arguments);
+                
+                // Only log metrics-related messages
+                const message = Array.from(arguments).join(' ');
+                if (message.includes('[Metrics]')) {
+                    addDebugEntry(message);
+                    
+                    // Update last API call if API fetch mentioned
+                    if (message.includes('Fetching data from API')) {
+                        document.getElementById('debug-last-call').textContent = new Date().toLocaleTimeString();
+                    }
+                    
+                    // Update auto refresh status if toggle changes
+                    if (message.includes('Live updates disabled')) {
+                        document.getElementById('debug-auto-refresh').textContent = 'Disabled';
+                        document.getElementById('debug-auto-refresh').style.color = '#ff6b6b';
+                    } else if (message.includes('Live updates enabled')) {
+                        document.getElementById('debug-auto-refresh').textContent = 'Enabled';
+                        document.getElementById('debug-auto-refresh').style.color = '#00ffff';
+                    }
+                }
+            };
+            
+            console.debug('[Metrics] Debug panel created');
+        }
+        
+        // Toggle debug panel visibility
+        function toggleDebugPanel() {
+            const panel = document.getElementById('debug-panel');
+            if (!panel) return;
+            
+            if (panel.style.display === 'none' || !panel.style.display) {
+                panel.style.display = 'block';
+                console.debug('[Metrics] Debug panel opened');
+            } else {
+                panel.style.display = 'none';
+                console.debug('[Metrics] Debug panel closed');
+            }
+        }
+        
+        // Add entry to debug panel log
+        function addDebugEntry(message) {
+            const logPanel = document.getElementById('debug-panel-log');
+            if (!logPanel) return;
+            
+            const entry = document.createElement('div');
+            entry.className = 'debug-entry';
+            
+            const timestamp = document.createElement('span');
+            timestamp.className = 'debug-timestamp';
+            timestamp.textContent = new Date().toLocaleTimeString() + ' ';
+            
+            const messageSpan = document.createElement('span');
+            messageSpan.className = 'debug-message';
+            messageSpan.textContent = message;
+            
+            entry.appendChild(timestamp);
+            entry.appendChild(messageSpan);
+            logPanel.appendChild(entry);
+            
+            // Auto-scroll to bottom
+            logPanel.scrollTop = logPanel.scrollHeight;
+            
+            // Limit entries to keep performance
+            if (logPanel.children.length > 50) {
+                logPanel.removeChild(logPanel.children[0]);
+            }
+        }
     </script>
 </body>
 </html>

@@ -102,6 +102,7 @@ def index(request):
         'region_data': region_data,
         'agg_json': agg_json,  # Pre-aggregated data
         'current_time': current_time,
+        'live_metrics_enabled': True,  # Flag to indicate live metrics are enabled
     }
     
     return render(request, 'congestion_analyzer/index.html', context)
