@@ -1,124 +1,107 @@
 from django.shortcuts import render
 from .models import VehicleEntry
-from django.db.models import Sum, Count, Avg
+from django.db.models import Sum
 from django.utils import timezone
 import pandas as pd
 import json
 import pprint
+from django.core.serializers.json import DjangoJSONEncoder
 
 def index(request):
     """
     View function for the main visualization dashboard.
-    Uses pandas to process data from the VehicleEntry model for visualization.
+    Creates a pipeline from database to pre-aggregated DataFrame to Perspective.
     """
-    # Get filter parameters from request
-    vehicle_filter = request.GET.get('vehicle_class', None)
-    start_date = request.GET.get('start_date', None)
-    end_date = request.GET.get('end_date', None)
-    
-    # Query all entries with filters
-    queryset = VehicleEntry.objects.all()
-    
-    # Apply Django ORM filters
-    if vehicle_filter:
-        queryset = queryset.filter(vehicle_class=vehicle_filter)
-    if start_date:
-        queryset = queryset.filter(toll_date__gte=start_date)
-    if end_date:
-        queryset = queryset.filter(toll_date__lte=end_date)
-    
-    # Convert to DataFrame for processing
-    entries_data = pd.DataFrame(list(queryset.values(
+    # Step 1: Query the database
+    queryset = VehicleEntry.objects.all().values(
         'toll_date', 'hour_of_day', 'day_of_week', 'day_of_week_int',
-        'vehicle_class', 'detection_region', 'crz_entries'
-    )))
+        'vehicle_class', 'detection_region', 'crz_entries', 'time_period',
+        'detection_group', 'toll_week'
+    )
     
-    # Get total entries
-    total_entries = len(entries_data) if not entries_data.empty else 0
+    # Step 2: Convert directly to DataFrame
+    df = pd.DataFrame(list(queryset))
     
-    # Process data with pandas instead of perspective
-    if not entries_data.empty:
-        # Get entries by vehicle class
-        vehicle_class_data = entries_data.groupby('vehicle_class')['crz_entries'].sum().reset_index()
-        vehicle_class_data = vehicle_class_data.rename(columns={'crz_entries': 'count'})
-        vehicle_class_data = vehicle_class_data.sort_values('count', ascending=False)
-        vehicle_class_data = vehicle_class_data.to_dict('records')
+    # Get total entries count for stats
+    total_entries = len(df) if not df.empty else 0
+    
+    if not df.empty:
+        # Ensure date column is correctly formatted
+        if 'toll_date' in df.columns:
+            # Convert to datetime for proper aggregation
+            df['toll_date'] = pd.to_datetime(df['toll_date'])
+            # Extract month and year for aggregation
+            df['month_year'] = df['toll_date'].dt.strftime('%Y-%m')
+            # Keep the original datetime format
         
-        # Get entries by day of week
-        day_of_week_data = entries_data.groupby(['day_of_week', 'day_of_week_int'])['crz_entries'].sum().reset_index()
-        day_of_week_data = day_of_week_data.rename(columns={'crz_entries': 'count'})
-        day_of_week_data = day_of_week_data.sort_values('day_of_week_int')
-        day_of_week_data = day_of_week_data.to_dict('records')
+        # Create region summary for stats display
+        region_summary = df.groupby('detection_region')['crz_entries'].sum().reset_index()
+        region_summary = region_summary.rename(columns={'crz_entries': 'count'})
+        region_summary = region_summary.sort_values('count', ascending=False)
+        region_data = region_summary.to_dict('records')
         
-        # Get entries by hour of day
-        hour_data = entries_data.groupby('hour_of_day')['crz_entries'].sum().reset_index()
-        hour_data = hour_data.rename(columns={'crz_entries': 'count'})
-        hour_data = hour_data.sort_values('hour_of_day')
-        hour_data = hour_data.to_dict('records')
+        # Calculate total volume
+        total_volume = df['crz_entries'].sum()
         
-        # Get entries by region
-        region_data = entries_data.groupby('detection_region')['crz_entries'].sum().reset_index()
-        region_data = region_data.rename(columns={'crz_entries': 'count'})
-        region_data = region_data.sort_values('count', ascending=False)
-        region_data = region_data.to_dict('records')
+        # Step 3: Pre-aggregate data at different levels
+        print(f"Original DataFrame size: {len(df)} records")
         
-        # NEW: Add region time analysis - traffic by hour for each region
-        region_hour_data = entries_data.groupby(['detection_region', 'hour_of_day'])['crz_entries'].sum().reset_index()
-        region_hour_pivot = region_hour_data.pivot(index='hour_of_day', columns='detection_region', values='crz_entries')
-        region_hour_pivot = region_hour_pivot.fillna(0)
+        # Level 1: Hourly aggregation (most compact)
+        hourly_agg = df.groupby([
+            'detection_region',
+            'vehicle_class',
+            'hour_of_day'
+        ])['crz_entries'].sum().reset_index()
+        print(f"Hourly aggregation: {len(hourly_agg)} records")
         
-        # Convert the pivot table to a format suitable for Chart.js
-        region_hours_labels = region_hour_pivot.index.tolist()
-        region_names = region_hour_pivot.columns.tolist()
-        region_hour_series = []
+        # Level 2: Daily aggregation
+        daily_agg = df.groupby([
+            'detection_region',
+            'vehicle_class',
+            'day_of_week',
+            'day_of_week_int'
+        ])['crz_entries'].sum().reset_index()
+        print(f"Daily aggregation: {len(daily_agg)} records")
         
-        # Create a dataset for each region
-        for region in region_names:
-            region_hour_series.append({
-                'region': region,
-                'data': region_hour_pivot[region].tolist()
-            })
+        # Level 3: Monthly aggregation
+        monthly_agg = df.groupby([
+            'detection_region',
+            'vehicle_class',
+            'month_year'
+        ])['crz_entries'].sum().reset_index()
+        print(f"Monthly aggregation: {len(monthly_agg)} records")
         
-        # NEW: Entry point comparison data
-        entry_point_data = {
-            'labels': [item['detection_region'] for item in region_data],
-            'counts': [item['count'] for item in region_data]
-        }
+        # Step 4: Convert to JSON for Perspective
+        # Create a single aggregated dataset in optimal form for Perspective
+        # - Include all needed dimensions for slicing
+        # - Pre-aggregate to reduce data transfer size
         
-        # Get unique vehicle classes for filter dropdown
-        vehicle_classes = entries_data['vehicle_class'].unique().tolist()
+        # Choose hourly aggregation as default (most compact yet informative)
+        agg_data = hourly_agg
+        
+        # Convert to JSON
+        agg_json = agg_data.to_json(orient='records', date_format='iso')
+        print(f"Sending {len(agg_data)} pre-aggregated records to Perspective")
+        
+        # Also provide sample information
+        print("Sample pre-aggregated record:")
+        if len(agg_data) > 0:
+            print(agg_data.iloc[0].to_dict())
     else:
         # Handle empty data case
-        vehicle_class_data = []
-        day_of_week_data = []
-        hour_data = []
+        agg_json = "[]"
         region_data = []
-        vehicle_classes = []
-        region_hour_series = []
-        region_hours_labels = []
-        entry_point_data = {'labels': [], 'counts': []}
+        total_volume = 0
     
     # Current time for the dashboard refresh indicator
     current_time = timezone.now()
-    
-    # Calculate total traffic volume
-    total_volume = sum(item['count'] for item in region_data) if region_data else 0
-    
+
     context = {
         'total_entries': total_entries,
         'total_volume': total_volume,
-        'vehicle_class_data': vehicle_class_data,
-        'day_of_week_data': day_of_week_data,
-        'hour_data': hour_data,
         'region_data': region_data,
-        'region_hour_series': json.dumps(region_hour_series),
-        'region_hours_labels': json.dumps(region_hours_labels),
-        'entry_point_data': json.dumps(entry_point_data),
+        'agg_json': agg_json,  # Pre-aggregated data
         'current_time': current_time,
-        'vehicle_classes': vehicle_classes,
-        'selected_vehicle': vehicle_filter,
-        'start_date': start_date,
-        'end_date': end_date,
     }
     
     return render(request, 'congestion_analyzer/index.html', context)

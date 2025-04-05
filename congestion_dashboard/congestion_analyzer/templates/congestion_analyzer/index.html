@@ -2,405 +2,574 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no">
     <title>Traffic Congestion Dashboard</title>
+    
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Perspective Preloads for Faster Loading -->
+    <link rel="preload" href="https://cdn.jsdelivr.net/npm/@finos/perspective-viewer/dist/wasm/perspective-viewer.wasm" as="fetch" type="application/wasm" crossorigin="anonymous" />
+    <link rel="preload" href="https://cdn.jsdelivr.net/npm/@finos/perspective/dist/wasm/perspective-server.wasm" as="fetch" type="application/wasm" crossorigin="anonymous" />
+    
+    <!-- Latest Perspective Viewer CSS -->
+    <link rel="stylesheet" crossorigin="anonymous" href="https://cdn.jsdelivr.net/npm/@finos/perspective-viewer/dist/css/themes.css" />
+    
     <style>
-        .chart-container {
-            position: relative;
-            height: 300px;
-            margin-bottom: 30px;
+        #app {
+            display: flex;
+            flex-direction: column;
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #f8f9fa;
         }
-        .card {
-            margin-bottom: 20px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        
+        #header {
+            padding: 10px 15px;
+            background-color: #0d6efd;
+            color: white;
         }
-        .stat-card {
-            text-align: center;
-            padding: 15px;
+        
+        #controls {
+            display: flex;
+            padding: 10px 15px;
+            border-bottom: 1px solid #dee2e6;
+            background-color: white;
+            flex-wrap: wrap;
         }
-        .stat-number {
-            font-size: 2.5rem;
-            font-weight: bold;
+        
+        .control-group {
+            margin-right: 24px;
+            display: flex;
+            flex-direction: column;
         }
-        .stat-label {
+        
+        .control-label {
+            font-size: 12px;
             color: #6c757d;
+            margin-bottom: 4px;
+        }
+        
+        .control-input {
+            padding: 4px 8px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+        }
+        
+        .control-select {
+            min-width: 160px;
+        }
+        
+        #stats {
+            display: flex;
+            padding: 10px 15px;
+            background-color: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        .stat-card {
+            background-color: white;
+            border-radius: 4px;
+            padding: 15px;
+            margin-right: 15px;
+            min-width: 140px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .stat-number {
+            font-size: 24px;
+            font-weight: bold;
+            color: #0d6efd;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #6c757d;
+        }
+        
+        perspective-viewer {
+            flex: 1;
+            overflow: visible;
+            border-top: 1px solid #dee2e6;
+        }
+        
+        /* Spinner */
+        #loading {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255,255,255,0.7);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        
+        .loading-text {
+            margin-top: 15px;
+            font-size: 14px;
+            color: #6c757d;
+        }
+        
+        /* Toggle button */
+        .view-toggle {
+            display: flex;
+            border-radius: 4px;
+            overflow: hidden;
+            border: 1px solid #0d6efd;
+        }
+        
+        .view-toggle button {
+            background: none;
+            border: none;
+            padding: 6px 12px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        
+        .view-toggle button.active {
+            background-color: #0d6efd;
+            color: white;
+        }
+        
+        .view-toggle button:not(.active) {
+            color: #0d6efd;
         }
     </style>
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
-        <div class="container">
-            <a class="navbar-brand" href="#">Traffic Congestion Dashboard</a>
-            <span class="navbar-text text-white">
-                Last updated: {{ current_time|date:"F d, Y H:i" }}
-            </span>
+    <div id="app">
+        <div id="header">
+            <h4>Traffic Congestion Dashboard</h4>
         </div>
-    </nav>
-
-    <div class="container mt-4">
-        <div class="row">
-            <div class="col-md-12 mb-4">
-                <h2>Traffic Congestion Analysis</h2>
-                <p>This dashboard visualizes traffic congestion data across different dimensions.</p>
+        
+        <div id="controls">
+            <div class="control-group">
+                <span class="control-label">Region</span>
+                <select id="region-filter" class="control-input control-select">
+                    <option value="all">All Regions</option>
+                </select>
             </div>
-        </div>
-
-        <!-- Summary Statistics Cards -->
-        <div class="row mt-4 mb-4">
-            <div class="col-md-4">
-                <div class="card stat-card">
-                    <div class="card-body">
-                        <div class="stat-number">{{ total_entries }}</div>
-                        <div class="stat-label">Total Records</div>
-                    </div>
+            
+            <div class="control-group">
+                <span class="control-label">Vehicle Class</span>
+                <select id="vehicle-filter" class="control-input control-select">
+                    <option value="all">All Vehicles</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <span class="control-label">Time Period</span>
+                <div class="view-toggle">
+                    <button id="hourly-view" class="active">Hourly</button>
+                    <button id="daily-view">Daily</button>
+                    <button id="monthly-view">Monthly</button>
                 </div>
             </div>
-            <div class="col-md-4">
-                <div class="card stat-card">
-                    <div class="card-body">
-                        <div class="stat-number">{{ total_volume }}</div>
-                        <div class="stat-label">Total Vehicle Entries</div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="card stat-card">
-                    <div class="card-body">
-                        <div class="stat-number">{{ region_data|length }}</div>
-                        <div class="stat-label">Entry Points</div>
-                    </div>
-                </div>
+            
+            <div class="control-group" style="margin-left: auto;">
+                <span class="control-label">Status</span>
+                <span id="status-indicator" style="font-size: 12px; color: #28a745;">Ready</span>
             </div>
         </div>
-
-        <!-- Filter Options -->
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header">
-                        Filter Options
-                    </div>
-                    <div class="card-body">
-                        <form method="get" class="row g-3">
-                            <div class="col-md-4">
-                                <label for="vehicle_class" class="form-label">Vehicle Class</label>
-                                <select class="form-select" id="vehicle_class" name="vehicle_class">
-                                    <option value="">All Vehicle Classes</option>
-                                    {% for class in vehicle_classes %}
-                                    <option value="{{ class }}" {% if selected_vehicle == class %}selected{% endif %}>{{ class }}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                            <div class="col-md-3">
-                                <label for="start_date" class="form-label">Start Date</label>
-                                <input type="date" class="form-control" id="start_date" name="start_date" value="{{ start_date }}">
-                            </div>
-                            <div class="col-md-3">
-                                <label for="end_date" class="form-label">End Date</label>
-                                <input type="date" class="form-control" id="end_date" name="end_date" value="{{ end_date }}">
-                            </div>
-                            <div class="col-md-2 d-flex align-items-end">
-                                <button type="submit" class="btn btn-primary w-100">Apply Filters</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
+        
+        <div id="stats">
+            <div class="stat-card">
+                <div class="stat-number" id="total-entries">{{ total_entries }}</div>
+                <div class="stat-label">Total Records</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="total-volume">{{ total_volume }}</div>
+                <div class="stat-label">Vehicle Entries</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="region-count">{{ region_data|length }}</div>
+                <div class="stat-label">Traffic Regions</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="avg-hourly">0</div>
+                <div class="stat-label">Avg. Hourly</div>
             </div>
         </div>
-
-        <!-- Vehicle Class and Day of Week Charts -->
-        <div class="row mt-4">
-            <!-- Traffic by Vehicle Class -->
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header">
-                        Traffic by Vehicle Class
-                    </div>
-                    <div class="card-body">
-                        <div class="chart-container">
-                            <canvas id="vehicleClassChart"></canvas>
-                        </div>
-                    </div>
-                </div>
+        
+        <perspective-viewer id="viewer"></perspective-viewer>
+        
+        <div id="loading">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
             </div>
-
-            <!-- Traffic by Day of Week -->
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header">
-                        Traffic by Day of Week
-                    </div>
-                    <div class="card-body">
-                        <div class="chart-container">
-                            <canvas id="dayOfWeekChart"></canvas>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            <div class="loading-text" id="loading-text">Initializing dashboard...</div>
         </div>
-
-        <!-- Hour of Day and Region Charts -->
-        <div class="row mt-4">
-            <!-- Traffic by Hour of Day -->
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header">
-                        Traffic by Hour of Day
-                    </div>
-                    <div class="card-body">
-                        <div class="chart-container">
-                            <canvas id="hourOfDayChart"></canvas>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Traffic by Region -->
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header">
-                        Traffic by Region
-                    </div>
-                    <div class="card-body">
-                        <div class="chart-container">
-                            <canvas id="regionChart"></canvas>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Entry Point Charts -->
-        <div class="row mt-4">
-            <!-- Entry Points Comparison -->
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header">
-                        Traffic by Entry Point
-                    </div>
-                    <div class="card-body">
-                        <div class="chart-container">
-                            <canvas id="entryPointChart"></canvas>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Entry Points by Hour -->
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header">
-                        Entry Points by Hour
-                    </div>
-                    <div class="card-body">
-                        <div class="chart-container">
-                            <canvas id="entryPointHourChart"></canvas>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-    <!-- Chart initialization scripts -->
-    <script>
-        // JavaScript will be implemented to initialize the charts with the data
-        document.addEventListener('DOMContentLoaded', function() {
-            // Vehicle Class Chart
-            const vehicleClassCtx = document.getElementById('vehicleClassChart').getContext('2d');
-            const vehicleClassChart = new Chart(vehicleClassCtx, {
-                type: 'pie',
-                data: {
-                    labels: [{% for item in vehicle_class_data %}'{{ item.vehicle_class }}',{% endfor %}],
-                    datasets: [{
-                        data: [{% for item in vehicle_class_data %}{{ item.count }},{% endfor %}],
-                        backgroundColor: [
-                            'rgba(255, 99, 132, 0.7)',
-                            'rgba(54, 162, 235, 0.7)',
-                            'rgba(255, 206, 86, 0.7)',
-                            'rgba(75, 192, 192, 0.7)',
-                            'rgba(153, 102, 255, 0.7)',
-                            'rgba(255, 159, 64, 0.7)'
-                        ]
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                }
-            });
-
-            // Day of Week Chart
-            const dayOfWeekCtx = document.getElementById('dayOfWeekChart').getContext('2d');
-            const dayOfWeekChart = new Chart(dayOfWeekCtx, {
-                type: 'bar',
-                data: {
-                    labels: [{% for item in day_of_week_data %}'{{ item.day_of_week }}',{% endfor %}],
-                    datasets: [{
-                        label: 'Traffic Volume',
-                        data: [{% for item in day_of_week_data %}{{ item.count }},{% endfor %}],
-                        backgroundColor: 'rgba(54, 162, 235, 0.7)',
-                        borderColor: 'rgba(54, 162, 235, 1)',
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: {
-                            beginAtZero: true
-                        }
-                    }
-                }
-            });
-
-            // Hour of Day Chart
-            const hourOfDayCtx = document.getElementById('hourOfDayChart').getContext('2d');
-            const hourOfDayChart = new Chart(hourOfDayCtx, {
-                type: 'line',
-                data: {
-                    labels: [{% for item in hour_data %}'{{ item.hour_of_day }}',{% endfor %}],
-                    datasets: [{
-                        label: 'Traffic Volume',
-                        data: [{% for item in hour_data %}{{ item.count }},{% endfor %}],
-                        backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                        borderColor: 'rgba(75, 192, 192, 1)',
-                        borderWidth: 2,
-                        tension: 0.4
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: {
-                            beginAtZero: true
-                        }
-                    }
-                }
-            });
-
-            // Region Chart
-            const regionCtx = document.getElementById('regionChart').getContext('2d');
-            const regionChart = new Chart(regionCtx, {
-                type: 'bar',
-                data: {
-                    labels: [{% for item in region_data %}'{{ item.detection_region }}',{% endfor %}],
-                    datasets: [{
-                        label: 'Traffic Volume',
-                        data: [{% for item in region_data %}{{ item.count }},{% endfor %}],
-                        backgroundColor: 'rgba(153, 102, 255, 0.7)',
-                        borderColor: 'rgba(153, 102, 255, 1)',
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: {
-                            beginAtZero: true
-                        }
-                    }
-                }
-            });
-
-            // Entry Point Chart
-            const entryPointCtx = document.getElementById('entryPointChart').getContext('2d');
-            const entryPointData = JSON.parse('{{ entry_point_data|escapejs }}');
-            const entryPointChart = new Chart(entryPointCtx, {
-                type: 'bar',
-                data: {
-                    labels: entryPointData.labels,
-                    datasets: [{
-                        label: 'Traffic Volume',
-                        data: entryPointData.counts,
-                        backgroundColor: 'rgba(255, 159, 64, 0.7)',
-                        borderColor: 'rgba(255, 159, 64, 1)',
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    indexAxis: 'y',
-                    scales: {
-                        x: {
-                            beginAtZero: true
-                        }
-                    }
-                }
-            });
-
-            // Entry Point by Hour Chart
-            const entryPointHourCtx = document.getElementById('entryPointHourChart').getContext('2d');
-            const regionHoursSeries = JSON.parse('{{ region_hour_series|escapejs }}');
-            const regionHoursLabels = JSON.parse('{{ region_hours_labels|escapejs }}');
-
-            const datasets = regionHoursSeries.map((series, index) => {
-                // Generate a color based on index
-                const hue = (index * 137) % 360;
-                const color = `hsl(${hue}, 70%, 60%)`;
+    </div>
+    
+    <script type="module">
+        import "https://cdn.jsdelivr.net/npm/@finos/perspective-viewer@3.4.0/dist/cdn/perspective-viewer.js";
+        import "https://cdn.jsdelivr.net/npm/@finos/perspective-viewer-datagrid@3.4.0/dist/cdn/perspective-viewer-datagrid.js";
+        import "https://cdn.jsdelivr.net/npm/@finos/perspective-viewer-d3fc@3.4.0/dist/cdn/perspective-viewer-d3fc.js";
+        import perspective from "https://cdn.jsdelivr.net/npm/@finos/perspective@3.4.0/dist/cdn/perspective.js";
+        
+        // Get pre-aggregated data from server
+        const aggData = JSON.parse('{{ agg_json|escapejs }}');
+        console.log(`Received pre-aggregated data with ${aggData.length} records`);
+        
+        // Get UI elements
+        const viewer = document.getElementById('viewer');
+        const loading = document.getElementById('loading');
+        const loadingText = document.getElementById('loading-text');
+        const statusIndicator = document.getElementById('status-indicator');
+        const regionFilter = document.getElementById('region-filter');
+        const vehicleFilter = document.getElementById('vehicle-filter');
+        const hourlyView = document.getElementById('hourly-view');
+        const dailyView = document.getElementById('daily-view');
+        const monthlyView = document.getElementById('monthly-view');
+        const avgHourly = document.getElementById('avg-hourly');
+        
+        // Current view state
+        let currentView = 'hourly';
+        let worker;
+        let table;
+        
+        // Update loading status
+        function updateStatus(message, isLoading = true) {
+            loadingText.textContent = message;
+            if (!isLoading) {
+                loading.style.display = 'none';
+                statusIndicator.textContent = 'Ready';
+                statusIndicator.style.color = '#28a745';
+            } else {
+                statusIndicator.textContent = 'Processing...';
+                statusIndicator.style.color = '#fd7e14';
+            }
+        }
+        
+        // Initialize the dashboard with pre-aggregated data
+        async function initDashboard() {
+            updateStatus('Initializing Perspective engine...');
+            
+            try {
+                // Step 1: Create Perspective worker
+                updateStatus('Creating Perspective worker...');
+                worker = await perspective.worker();
                 
-                return {
-                    label: series.region,
-                    data: series.data,
-                    borderColor: color,
-                    backgroundColor: `${color}33`,
-                    borderWidth: 2,
-                    fill: false,
-                    tension: 0.1
-                };
+                // Step 2: Create Perspective table from pre-aggregated data
+                updateStatus(`Loading pre-aggregated data (${aggData.length} records)...`);
+                console.time('table-creation');
+                
+                // Create table with pre-aggregated data
+                table = await worker.table(aggData);
+                
+                console.timeEnd('table-creation');
+                
+                // Step 3: Populate filters from pre-aggregated data
+                updateStatus('Generating filters...');
+                populateFilters();
+                
+                // Step 4: Load the table into the viewer with custom lazy loading setting
+                updateStatus('Initializing visualization...');
+                console.time('viewer-load');
+                
+                // Set lazy loading threshold to 25%
+                await viewer.setAttribute('lazy', '0.25');
+                
+                await viewer.load(Promise.resolve(table));
+                console.timeEnd('viewer-load');
+                
+                // Step 5: Apply initial view configuration
+                updateStatus('Configuring visualization...');
+                console.time('initial-view');
+                await applyHourlyView();
+                console.timeEnd('initial-view');
+                
+                // Add event listeners
+                setupEventListeners();
+                
+                // Calculate and update statistics
+                updateStats();
+                
+                // Hide loading indicator
+                updateStatus('Dashboard ready', false);
+                
+            } catch (error) {
+                console.error('Error initializing dashboard:', error);
+                updateStatus(`Error: ${error.message}`);
+                loading.style.backgroundColor = 'rgba(255,0,0,0.1)';
+            }
+        }
+        
+        // Populate filter dropdowns from pre-aggregated data
+        function populateFilters() {
+            console.time('populate-filters');
+            
+            // Extract unique values from pre-aggregated data
+            const regions = [...new Set(aggData.map(d => d.detection_region))].sort();
+            regions.forEach(region => {
+                const option = document.createElement('option');
+                option.value = region;
+                option.textContent = region;
+                regionFilter.appendChild(option);
             });
-
-            const entryPointHourChart = new Chart(entryPointHourCtx, {
-                type: 'line',
-                data: {
-                    labels: regionHoursLabels.map(hour => `${hour}:00`),
-                    datasets: datasets
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            title: {
-                                display: true,
-                                text: 'Number of Entries'
-                            }
-                        },
-                        x: {
-                            title: {
-                                display: true,
-                                text: 'Hour of Day'
-                            }
-                        }
-                    },
-                    plugins: {
-                        legend: {
-                            position: 'top',
-                        },
-                        tooltip: {
-                            mode: 'index',
-                            intersect: false,
-                        }
-                    },
-                    interaction: {
-                        mode: 'nearest',
-                        axis: 'x',
-                        intersect: false
+            
+            const vehicles = [...new Set(aggData.map(d => d.vehicle_class))].sort();
+            vehicles.forEach(vehicle => {
+                const option = document.createElement('option');
+                option.value = vehicle;
+                option.textContent = vehicle;
+                vehicleFilter.appendChild(option);
+            });
+            
+            // Add info about pre-aggregation
+            const infoElement = document.createElement('div');
+            infoElement.className = 'control-group';
+            infoElement.style.marginLeft = 'auto';
+            infoElement.style.marginRight = '20px';
+            
+            const infoLabel = document.createElement('span');
+            infoLabel.className = 'control-label';
+            infoLabel.textContent = 'Data Status';
+            
+            const infoText = document.createElement('span');
+            infoText.style.fontSize = '12px';
+            infoText.style.color = '#198754';
+            infoText.textContent = `Pre-aggregated (${aggData.length} records)`;
+            
+            infoElement.appendChild(infoLabel);
+            infoElement.appendChild(infoText);
+            
+            // Add to controls
+            const controlsContainer = document.getElementById('controls');
+            controlsContainer.appendChild(infoElement);
+            
+            console.timeEnd('populate-filters');
+        }
+        
+        // Setup event listeners
+        function setupEventListeners() {
+            // View toggles
+            hourlyView.addEventListener('click', () => {
+                setActiveView('hourly');
+                applyHourlyView();
+            });
+            
+            dailyView.addEventListener('click', () => {
+                setActiveView('daily');
+                applyDailyView();
+            });
+            
+            monthlyView.addEventListener('click', () => {
+                setActiveView('monthly');
+                applyMonthlyView();
+            });
+            
+            // Filters with debouncing
+            let filterTimeout;
+            function debouncedFilter() {
+                clearTimeout(filterTimeout);
+                filterTimeout = setTimeout(applyFilters, 300);
+            }
+            
+            regionFilter.addEventListener('change', debouncedFilter);
+            vehicleFilter.addEventListener('change', debouncedFilter);
+        }
+        
+        // Set active view button
+        function setActiveView(view) {
+            currentView = view;
+            [hourlyView, dailyView, monthlyView].forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            if (view === 'hourly') hourlyView.classList.add('active');
+            if (view === 'daily') dailyView.classList.add('active');
+            if (view === 'monthly') monthlyView.classList.add('active');
+        }
+        
+        // Apply hourly view - optimized for pre-aggregated data
+        async function applyHourlyView() {
+            statusIndicator.textContent = 'Applying hourly view...';
+            statusIndicator.style.color = '#fd7e14';
+            
+            try {
+                await viewer.restore({
+                    plugin: "Y Bar",
+                    columns: ["crz_entries"],
+                    group_by: ["detection_region", "hour_of_day"],
+                    split_by: ["vehicle_class"],
+                    sort: [["hour_of_day", "asc"]],
+                    aggregates: {
+                        crz_entries: "sum"
                     }
+                });
+                
+                statusIndicator.textContent = 'Ready';
+                statusIndicator.style.color = '#28a745';
+                return true;
+            } catch (error) {
+                console.error('Error applying hourly view:', error);
+                statusIndicator.textContent = 'Error';
+                statusIndicator.style.color = '#dc3545';
+                return false;
+            }
+        }
+        
+        // Apply daily view - check if day_of_week is available
+        async function applyDailyView() {
+            statusIndicator.textContent = 'Applying daily view...';
+            statusIndicator.style.color = '#fd7e14';
+            
+            try {
+                // Check if day_of_week is in the pre-aggregated data
+                const hasDayOfWeek = aggData.length > 0 && 'day_of_week' in aggData[0];
+                
+                if (hasDayOfWeek) {
+                    await viewer.restore({
+                        plugin: "Y Bar",
+                        columns: ["crz_entries"],
+                        group_by: ["detection_region", "day_of_week"],
+                        split_by: ["vehicle_class"],
+                        sort: [["day_of_week_int", "asc"]],
+                        aggregates: {
+                            crz_entries: "sum"
+                        }
+                    });
+                } else {
+                    // Fallback to region-based view if day_of_week not available
+                    await viewer.restore({
+                        plugin: "Treemap",
+                        columns: ["crz_entries"],
+                        group_by: ["detection_region", "vehicle_class"],
+                        aggregates: {
+                            crz_entries: "sum"
+                        }
+                    });
+                    statusIndicator.textContent = 'Daily view not available in pre-aggregated data';
+                    statusIndicator.style.color = '#fd7e14';
                 }
-            });
-        });
+                
+                return true;
+            } catch (error) {
+                console.error('Error applying daily view:', error);
+                statusIndicator.textContent = 'Error';
+                statusIndicator.style.color = '#dc3545';
+                return false;
+            }
+        }
+        
+        // Apply monthly view - check if month_year is available
+        async function applyMonthlyView() {
+            statusIndicator.textContent = 'Applying monthly view...';
+            statusIndicator.style.color = '#fd7e14';
+            
+            try {
+                // Check if month_year is in the pre-aggregated data
+                const hasMonthYear = aggData.length > 0 && 'month_year' in aggData[0];
+                
+                if (hasMonthYear) {
+                    await viewer.restore({
+                        plugin: "X/Y Line",
+                        columns: ["crz_entries"],
+                        group_by: ["month_year"],
+                        split_by: ["detection_region"],
+                        sort: [["month_year", "asc"]],
+                        aggregates: {
+                            crz_entries: "sum"
+                        }
+                    });
+                } else {
+                    // Fallback to stacked bar if month data not available
+                    await viewer.restore({
+                        plugin: "Y Bar",
+                        columns: ["crz_entries"],
+                        group_by: ["detection_region"],
+                        split_by: ["vehicle_class"],
+                        aggregates: {
+                            crz_entries: "sum"
+                        }
+                    });
+                    statusIndicator.textContent = 'Monthly view not available in pre-aggregated data';
+                    statusIndicator.style.color = '#fd7e14';
+                }
+                
+                return true;
+            } catch (error) {
+                console.error('Error applying monthly view:', error);
+                statusIndicator.textContent = 'Error';
+                statusIndicator.style.color = '#dc3545';
+                return false;
+            }
+        }
+        
+        // Apply filters
+        async function applyFilters() {
+            statusIndicator.textContent = 'Applying filters...';
+            statusIndicator.style.color = '#fd7e14';
+            
+            let filters = {};
+            
+            // Region filter
+            const region = regionFilter.value;
+            if (region !== 'all') {
+                filters['detection_region'] = [region];
+            }
+            
+            // Vehicle class filter
+            const vehicle = vehicleFilter.value;
+            if (vehicle !== 'all') {
+                filters['vehicle_class'] = [vehicle];
+            }
+            
+            try {
+                console.time('apply-filters');
+                
+                await viewer.restore({
+                    filter: Object.keys(filters).length > 0 ? filters : []
+                });
+                
+                console.timeEnd('apply-filters');
+                
+                // Update statistics
+                updateStats();
+                
+                statusIndicator.textContent = 'Ready';
+                statusIndicator.style.color = '#28a745';
+            } catch (error) {
+                console.error('Error applying filters:', error);
+                statusIndicator.textContent = 'Error';
+                statusIndicator.style.color = '#dc3545';
+            }
+        }
+        
+        // Update statistics
+        async function updateStats() {
+            try {
+                console.time('update-stats');
+                
+                const view = await table.view();
+                const stats = await view.to_columns();
+                
+                // Calculate average hourly traffic
+                const totalEntries = stats.crz_entries ? stats.crz_entries.reduce((sum, val) => sum + val, 0) : 0;
+                const hourlyAvg = Math.round(totalEntries / 24);
+                
+                // Update stat display
+                avgHourly.textContent = hourlyAvg.toLocaleString();
+                
+                // Clean up view
+                view.delete();
+                
+                console.timeEnd('update-stats');
+            } catch (error) {
+                console.error('Error updating stats:', error);
+            }
+        }
+        
+        // Start the dashboard
+        initDashboard();
     </script>
-
-    <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
