@@ -1,0 +1,286 @@
+{% extends 'congestion_analyzer/base.html' %}
+{% load static %}
+
+{% block title %}Historical Anomaly Detection - Traffic Dashboard{% endblock %}
+
+{% block content %}
+    {% include 'congestion_analyzer/includes/_header.html' %}
+    
+    <div class="container-fluid mt-4">
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <div>
+                            <h5 class="mb-0">Historical Anomaly Detection</h5>
+                            <small class="text-muted">Data range: {{ date_range }}</small>
+                            <small class="text-muted ms-2">Total entries analyzed: {{ total_entries }}</small>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="row mb-3">
+                            <div class="col-md-3">
+                                <label for="regionFilter" class="form-label">Filter by Region:</label>
+                                <select id="regionFilter" class="form-select">
+                                    <option value="all">All Regions</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="vehicleFilter" class="form-label">Filter by Vehicle Type:</label>
+                                <select id="vehicleFilter" class="form-select">
+                                    <option value="all">All Vehicle Types</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="typeFilter" class="form-label">Filter by Anomaly Type:</label>
+                                <select id="typeFilter" class="form-select">
+                                    <option value="all">All Types</option>
+                                    <option value="spike">Spikes</option>
+                                    <option value="drop">Drops</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="thresholdFilter" class="form-label">Filter by Threshold:</label>
+                                <select id="thresholdFilter" class="form-select">
+                                    <option value="all">All Thresholds</option>
+                                    <option value="p99">p99 (99%)</option>
+                                    <option value="p95">p95 (95%)</option>
+                                    <option value="p90">p90 (90%)</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Time</th>
+                                        <th>Type</th>
+                                        <th>Threshold</th>
+                                        <th>Vehicle Type</th>
+                                        <th>Region</th>
+                                        <th>CRZ Entries</th>
+                                        <th>Expected</th>
+                                        <th>Deviation</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="anomaly-table">
+                                    <!-- Anomalies will be populated here -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0">Anomalies by Region</h5>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="regionChart" height="300"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0">Anomalies by Vehicle Type</h5>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="vehicleChart" height="300"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        .badge.spike {
+            background-color: #dc3545;
+        }
+        
+        .badge.drop {
+            background-color: #198754;
+        }
+        
+        .deviation-positive {
+            color: #dc3545;
+        }
+        
+        .deviation-negative {
+            color: #198754;
+        }
+    </style>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <script>
+        // Initialize anomaly data from server-side context
+        const anomalyData = {{ anomalies|safe }};
+        let filteredAnomalies = [...anomalyData];
+        
+        // Extract unique regions and vehicle types for filters
+        const regions = [...new Set(anomalyData.map(a => a.detection_region))];
+        const vehicleTypes = [...new Set(anomalyData.map(a => a.vehicle_class))];
+        
+        // Populate filter dropdowns
+        const regionFilter = document.getElementById('regionFilter');
+        regions.forEach(region => {
+            const option = document.createElement('option');
+            option.value = region;
+            option.textContent = region;
+            regionFilter.appendChild(option);
+        });
+        
+        const vehicleFilter = document.getElementById('vehicleFilter');
+        vehicleTypes.forEach(type => {
+            const option = document.createElement('option');
+            option.value = type;
+            option.textContent = type;
+            vehicleFilter.appendChild(option);
+        });
+        
+        // Setup filter event listeners
+        document.getElementById('regionFilter').addEventListener('change', applyFilters);
+        document.getElementById('vehicleFilter').addEventListener('change', applyFilters);
+        document.getElementById('typeFilter').addEventListener('change', applyFilters);
+        document.getElementById('thresholdFilter').addEventListener('change', applyFilters);
+        
+        function applyFilters() {
+            const regionValue = document.getElementById('regionFilter').value;
+            const vehicleValue = document.getElementById('vehicleFilter').value;
+            const typeValue = document.getElementById('typeFilter').value;
+            const thresholdValue = document.getElementById('thresholdFilter').value;
+            
+            filteredAnomalies = anomalyData.filter(anomaly => {
+                return (regionValue === 'all' || anomaly.detection_region === regionValue) &&
+                       (vehicleValue === 'all' || anomaly.vehicle_class === vehicleValue) &&
+                       (typeValue === 'all' || anomaly.type === typeValue) &&
+                       (thresholdValue === 'all' || anomaly.threshold === thresholdValue);
+            });
+            
+            updateAnomalyTable(filteredAnomalies);
+            updateCharts(filteredAnomalies);
+        }
+        
+        function updateAnomalyTable(anomalyData) {
+            const table = document.getElementById('anomaly-table');
+            table.innerHTML = '';
+            
+            if (!anomalyData || anomalyData.length === 0) {
+                const row = document.createElement('tr');
+                row.innerHTML = '<td colspan="8" class="text-center">No anomalies detected</td>';
+                table.appendChild(row);
+                return;
+            }
+            
+            anomalyData.forEach(anomaly => {
+                const row = document.createElement('tr');
+                const timeStr = `${anomaly.timestamp} ${anomaly.hour.toString().padStart(2, '0')}:${anomaly.minute.toString().padStart(2, '0')}`;
+                const deviationClass = anomaly.deviation > 0 ? 'deviation-positive' : 'deviation-negative';
+                
+                row.innerHTML = `
+                    <td>${timeStr}</td>
+                    <td><span class="badge ${anomaly.type === 'spike' ? 'spike' : 'drop'}">${anomaly.type}</span></td>
+                    <td>${anomaly.threshold}</td>
+                    <td>${anomaly.vehicle_class}</td>
+                    <td>${anomaly.detection_region}</td>
+                    <td>${anomaly.entries.toLocaleString()}</td>
+                    <td>${anomaly.expected.toLocaleString()}</td>
+                    <td class="${deviationClass}">${anomaly.deviation.toFixed(1)}%</td>
+                `;
+                table.appendChild(row);
+            });
+        }
+        
+        function updateCharts(anomalyData) {
+            // Count anomalies by region
+            const regionCounts = {};
+            anomalyData.forEach(anomaly => {
+                if (!regionCounts[anomaly.detection_region]) {
+                    regionCounts[anomaly.detection_region] = { spike: 0, drop: 0 };
+                }
+                regionCounts[anomaly.detection_region][anomaly.type]++;
+            });
+            
+            // Count anomalies by vehicle type
+            const vehicleCounts = {};
+            anomalyData.forEach(anomaly => {
+                if (!vehicleCounts[anomaly.vehicle_class]) {
+                    vehicleCounts[anomaly.vehicle_class] = { spike: 0, drop: 0 };
+                }
+                vehicleCounts[anomaly.vehicle_class][anomaly.type]++;
+            });
+            
+            // Update region chart
+            updateStackedBarChart('regionChart', regionCounts, 'Anomalies by Region');
+            
+            // Update vehicle chart
+            updateStackedBarChart('vehicleChart', vehicleCounts, 'Anomalies by Vehicle Type');
+        }
+        
+        function updateStackedBarChart(canvasId, data, title) {
+            const canvas = document.getElementById(canvasId);
+            
+            // Check if chart already exists and destroy it
+            if (canvas.chart) {
+                canvas.chart.destroy();
+            }
+            
+            const labels = Object.keys(data);
+            const spikeData = labels.map(label => data[label].spike);
+            const dropData = labels.map(label => data[label].drop);
+            
+            canvas.chart = new Chart(canvas, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Spikes',
+                            data: spikeData,
+                            backgroundColor: '#dc3545',
+                            borderColor: '#dc3545',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'Drops',
+                            data: dropData,
+                            backgroundColor: '#198754',
+                            borderColor: '#198754',
+                            borderWidth: 1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        },
+                        title: {
+                            display: true,
+                            text: title
+                        }
+                    },
+                    scales: {
+                        x: {
+                            stacked: true,
+                        },
+                        y: {
+                            stacked: true,
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Initial update with server-side data
+        updateAnomalyTable(anomalyData);
+        updateCharts(anomalyData);
+    </script>
+{% endblock content %} 
