@@ -344,7 +344,7 @@ def get_dashboard_data():
             aggregations = []
             # Copy the sample data generation code from the empty database case
             
-            regions = ['Brooklyn Bridge', 'Queens-Midtown Tunnel', 'Lincoln Tunnel', 'Williamsburg Bridge', 'Holland Tunnel']
+            regions = ["Holland Tunnel" , "Williamsburg Bridge", "FDR Drive at 60th St", "Brooklyn Bridge", "West 60th St", "Hugh L. Carey Tunnel", "East 60th St", "Queens Midtown Tunnel", "Lincoln Tunnel", "Queensboro Bridge"]
             vehicles = ['car', 'taxi', 'bus', 'multi_unit_truck', 'single_unit_truck', 'motorcycle']
             # (Rest of the sample data generation code)
             # ... (See code in the if df.empty section)

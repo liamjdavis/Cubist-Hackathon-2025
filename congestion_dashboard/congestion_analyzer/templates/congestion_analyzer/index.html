@@ -79,10 +79,8 @@
     const hourlyView = document.getElementById('hourly-view');
     const dailyView = document.getElementById('daily-view');
     const monthlyView = document.getElementById('monthly-view');
-    const avgHourly = document.getElementById('avg-hourly');
     const totalEntries = document.getElementById('total-entries');
     const totalVolume = document.getElementById('total-volume');
-    const regionCount = document.getElementById('region-count');
     const debugPanel = document.getElementById('debug-panel');
     const liveToggle = document.getElementById('liveToggle');
     
@@ -158,12 +156,11 @@
                 
                 const uniqueRegions = new Set(data.map(item => item.detection_region)).size;
                 console.debug(`[Metrics] Unique regions found: ${uniqueRegions}`);
-                regionCount.textContent = uniqueRegions.toLocaleString();
+                
                 
                 const hourlyAvg = Math.round(sumEntries / 24);
                 console.debug(`[Metrics] Average hourly calculated: ${hourlyAvg}`);
-                avgHourly.textContent = hourlyAvg.toLocaleString();
-                
+
                 flashStatNumbers();
                 
                 console.timeEnd('metrics-update');
@@ -223,12 +220,19 @@
     }
 
     function flashStatNumbers() {
-        document.querySelectorAll('.stat-number').forEach(el => {
-            el.style.transition = 'color 0.5s';
-            el.style.color = '#0d9e5f'; // Briefly change color
-            setTimeout(() => {
-                el.style.color = '#0d6efd'; // Return to original color
-            }, 800);
+        const statNumbers = document.querySelectorAll('.stat-number');
+        if (!statNumbers || statNumbers.length === 0) return;
+
+        statNumbers.forEach(el => {
+            if (el) {
+                el.style.transition = 'color 0.5s';
+                el.style.color = '#0d9e5f';
+                setTimeout(() => {
+                    if (el) { // Check again in case element was removed
+                        el.style.color = '#0d6efd';
+                    }
+                }, 800);
+            }
         });
     }
 
@@ -697,73 +701,65 @@
          try {
             console.time('update-stats');
             let currentTotalEntries = 0;
-            let currentRecordCount = 0; // Keep track for potential display
+            let currentRecordCount = 0;
             let currentRegions = new Set();
 
-             if (isReplaying) {
-                 // Calculate stats directly from the provided replay data subset
-                  currentTotalEntries = dataToUse.reduce((sum, record) => sum + (parseInt(record.crz_entries) || 0), 0);
-                  currentRecordCount = dataToUse.length; // Example: count of records processed so far
-                  dataToUse.forEach(record => currentRegions.add(record.detection_region));
-                  console.debug(`[Replay] Stats Update - Entries: ${currentTotalEntries}, Records: ${currentRecordCount}, Regions: ${currentRegions.size}`);
-
-             } else {
-                  // --- Original Logic using Perspective view ---
-                  // Get stats from the current perspective view if not replaying
-                 if (!viewer || !(await viewer.view())) {
-                     console.warn('Viewer or view not ready for stats update.');
-                     console.timeEnd('update-stats'); // Ensure timeEnd is called even on early exit
-                     return; // Exit if view isn't available
-                 }
-                 const view = await viewer.view();
-                 const statsData = await view.to_columns();
-                 view.delete(); // Clean up the view
-
-                 // Perspective view often aggregates, so crz_entries sum might be the most relevant value here
-                 currentTotalEntries = statsData.crz_entries ? statsData.crz_entries.reduce((sum, val) => sum + (val || 0), 0) : 0;
-                 // Record count and unique regions are harder to get accurately from an *aggregated* perspective view result.
-                 // We'll rely on the live update or replay mode for those specific stats for now.
-                 console.debug(`[Stats] Perspective Update - Sum Entries: ${currentTotalEntries}`);
-             }
-
-
-            // Update UI elements
-            // Decide what totalEntries should show: sum of crz_entries or record count? Let's use crz_entries sum for consistency.
-            totalEntries.textContent = currentTotalEntries.toLocaleString();
-            totalVolume.textContent = currentTotalEntries.toLocaleString(); // Set volume to the same value for now
-
-            // Only update region count if we have accurate data (during replay)
             if (isReplaying) {
-                  regionCount.textContent = currentRegions.size.toLocaleString();
-            }
-            // Avg Hourly Calculation
-            const hourlyAvg = Math.round(currentTotalEntries / 24); // Calculate based on current total
-            avgHourly.textContent = hourlyAvg.toLocaleString();
+                // Calculate stats directly from the provided replay data subset
+                currentTotalEntries = dataToUse.reduce((sum, record) => sum + (parseInt(record.crz_entries) || 0), 0);
+                currentRecordCount = dataToUse.length;
+                dataToUse.forEach(record => currentRegions.add(record.detection_region));
+                console.debug(`[Replay] Stats Update - Entries: ${currentTotalEntries}, Records: ${currentRecordCount}, Regions: ${currentRegions.size}`);
+            } else {
+                // Get stats from the current perspective view if not replaying
+                if (!viewer || !(await viewer.view())) {
+                    console.warn('Viewer or view not ready for stats update.');
+                    console.timeEnd('update-stats');
+                    return;
+                }
+                const view = await viewer.view();
+                const statsData = await view.to_columns();
+                view.delete();
 
-            // Only flash if not replaying (or maybe on first step?)
+                currentTotalEntries = statsData.crz_entries ? statsData.crz_entries.reduce((sum, val) => sum + (val || 0), 0) : 0;
+                console.debug(`[Stats] Perspective Update - Sum Entries: ${currentTotalEntries}`);
+            }
+
+            // Safely update UI elements with null checks
+            const elements = {
+                totalEntries: document.getElementById('total-entries'),
+                totalVolume: document.getElementById('total-volume')
+            };
+
+            // Update elements if they exist
+            if (elements.totalEntries) {
+                elements.totalEntries.textContent = currentTotalEntries.toLocaleString();
+            }
+            if (elements.totalVolume) {
+                elements.totalVolume.textContent = currentTotalEntries.toLocaleString();
+            }
+
+            // Only flash if not replaying and elements exist
             if (!isReplaying) {
-                 flashStatNumbers();
+                flashStatNumbers();
             }
 
             console.timeEnd('update-stats');
          } catch (error) {
-             // Avoid spamming console if view isn't ready during filtering
-             if (!error.message?.includes('view is not initialized')) {
-                 console.error('Error updating stats:', error);
-             } else {
-                  console.warn('Stats update skipped, view not ready.');
-                  // Ensure timeEnd is called if an error occurs after time()
-                  console.timeEnd('update-stats');
-             }
+             console.error('Error updating stats:', error);
+             console.timeEnd('update-stats');
          }
     }
     
     // Function to update the last updated timestamp
     function updateLastUpdatedTime() {
-        const now = new Date();
-        const timeString = now.toLocaleTimeString();
-        document.getElementById('last-updated').textContent = `Last update: ${timeString}`;
-        console.debug(`[Metrics] Last updated timestamp set to: ${timeString}`);
+        const lastUpdatedElement = document.getElementById('last-updated');
+        if (lastUpdatedElement) {
+            const now = new Date();
+            const timeString = now.toLocaleTimeString();
+            lastUpdatedElement.textContent = `Last update: ${timeString}`;
+            console.debug(`[Metrics] Last updated timestamp set to: ${timeString}`);
+        }
     }
     
     // --- Debug Panel Functionality ---

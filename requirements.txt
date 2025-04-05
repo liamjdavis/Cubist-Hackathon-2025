@@ -11,3 +11,4 @@ requests
 sseclient-py
 httpx
 pydantic
+pytest-django
