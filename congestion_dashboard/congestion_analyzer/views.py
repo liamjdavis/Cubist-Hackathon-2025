@@ -1,108 +1,53 @@
 from django.shortcuts import render
-from .models import VehicleEntry
-from django.db.models import Sum
 from django.utils import timezone
-import pandas as pd
-import json
-import pprint
-from django.core.serializers.json import DjangoJSONEncoder
+
+# Import helper functions from the new modules
+from .view_helpers.data_fetcher import get_vehicle_data
+from .view_helpers.stats_calculator import calculate_base_stats
+from .view_helpers.aggregator import perform_aggregations
+from .view_helpers.context_builder import prepare_context
 
 def index(request):
     """
     View function for the main visualization dashboard.
-    Creates a pipeline from database to pre-aggregated DataFrame to Perspective.
+    Orchestrates data fetching, processing, and rendering using helper modules.
     """
-    # Step 1: Query the database
-    queryset = VehicleEntry.objects.all().values(
-        'toll_date', 'hour_of_day', 'day_of_week', 'day_of_week_int',
-        'vehicle_class', 'detection_region', 'crz_entries', 'time_period',
-        'detection_group', 'toll_week'
-    )
-    
-    # Step 2: Convert directly to DataFrame
-    df = pd.DataFrame(list(queryset))
-    
-    # Get total entries count for stats
-    total_entries = len(df) if not df.empty else 0
-    
-    if not df.empty:
-        # Ensure date column is correctly formatted
-        if 'toll_date' in df.columns:
-            # Convert to datetime for proper aggregation
-            df['toll_date'] = pd.to_datetime(df['toll_date'])
-            # Extract month and year for aggregation
-            df['month_year'] = df['toll_date'].dt.strftime('%Y-%m')
-            # Keep the original datetime format
-        
-        # Create region summary for stats display
-        region_summary = df.groupby('detection_region')['crz_entries'].sum().reset_index()
-        region_summary = region_summary.rename(columns={'crz_entries': 'count'})
-        region_summary = region_summary.sort_values('count', ascending=False)
-        region_data = region_summary.to_dict('records')
-        
-        # Calculate total volume
-        total_volume = df['crz_entries'].sum()
-        
-        # Step 3: Pre-aggregate data at different levels
-        print(f"Original DataFrame size: {len(df)} records")
-        
-        # Level 1: Hourly aggregation (most compact)
-        hourly_agg = df.groupby([
-            'detection_region',
-            'vehicle_class',
-            'hour_of_day'
-        ])['crz_entries'].sum().reset_index()
-        print(f"Hourly aggregation: {len(hourly_agg)} records")
-        
-        # Level 2: Daily aggregation
-        daily_agg = df.groupby([
-            'detection_region',
-            'vehicle_class',
-            'day_of_week',
-            'day_of_week_int'
-        ])['crz_entries'].sum().reset_index()
-        print(f"Daily aggregation: {len(daily_agg)} records")
-        
-        # Level 3: Monthly aggregation
-        monthly_agg = df.groupby([
-            'detection_region',
-            'vehicle_class',
-            'month_year'
-        ])['crz_entries'].sum().reset_index()
-        print(f"Monthly aggregation: {len(monthly_agg)} records")
-        
-        # Step 4: Convert to JSON for Perspective
-        # Create a single aggregated dataset in optimal form for Perspective
-        # - Include all needed dimensions for slicing
-        # - Pre-aggregate to reduce data transfer size
-        
-        # Choose hourly aggregation as default (most compact yet informative)
-        agg_data = hourly_agg
-        
-        # Convert to JSON
-        agg_json = agg_data.to_json(orient='records', date_format='iso')
-        print(f"Sending {len(agg_data)} pre-aggregated records to Perspective")
-        
-        # Also provide sample information
-        print("Sample pre-aggregated record:")
-        if len(agg_data) > 0:
-            print(agg_data.iloc[0].to_dict())
-    else:
-        # Handle empty data case
-        agg_json = "[]"
-        region_data = []
-        total_volume = 0
-    
-    # Current time for the dashboard refresh indicator
-    current_time = timezone.now()
+    print("--- Starting index view processing ---")
+    try:
+        # Step 1: Get data using data_fetcher
+        df = get_vehicle_data()
+        # Use df.copy() when passing to subsequent functions if they modify it,
+        # although current helpers aim not to modify the input DataFrame in place.
+        # However, copying provides safety against potential future modifications.
 
-    context = {
-        'total_entries': total_entries,
-        'total_volume': total_volume,
-        'region_data': region_data,
-        'agg_json': agg_json,  # Pre-aggregated data
-        'current_time': current_time,
-        'live_metrics_enabled': True,  # Flag to indicate live metrics are enabled
-    }
-    
-    return render(request, 'congestion_analyzer/index.html', context)
+        # Step 2: Calculate base statistics using stats_calculator
+        total_entries, region_data, total_volume = calculate_base_stats(df.copy())
+
+        # Step 3: Perform aggregations using aggregator
+        aggregations = perform_aggregations(df.copy()) 
+
+        # Step 4: Prepare context for the template using context_builder
+        context = prepare_context(total_entries, region_data, total_volume, aggregations)
+
+        # Step 5: Render template
+        response = render(request, 'congestion_analyzer/index.html', context)
+        print("--- Index view processing complete ---")
+        return response
+
+    except Exception as e:
+        # Basic error handling for the view
+        print(f"!!! FATAL ERROR in index view orchestration: {e} !!!")
+        # Log the full traceback for debugging
+        import traceback
+        traceback.print_exc()
+        
+        # Return a minimal context or render an error page
+        context = {
+            'total_entries': 0, 'total_volume': 0, 'region_data': [],
+            'agg_json': "[]", 'current_time': timezone.now(),
+            'live_metrics_enabled': False, 
+            'error_message': f'An unexpected error occurred: {e}' # Provide a generic message
+        }
+        # Consider rendering a specific error template:
+        # return render(request, 'congestion_analyzer/error.html', context, status=500)
+        return render(request, 'congestion_analyzer/index.html', context) # Return main page with error state
