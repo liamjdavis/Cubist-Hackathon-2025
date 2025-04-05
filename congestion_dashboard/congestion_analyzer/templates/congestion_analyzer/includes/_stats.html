@@ -1,0 +1,32 @@
+<div id="stats">
+    <div class="stat-card">
+        <div class="stat-number" id="total-entries">{{ total_entries }}</div>
+        <div class="stat-label">Total Records</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-number" id="total-volume">{{ total_volume }}</div>
+        <div class="stat-label">Vehicle Entries</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-number" id="region-count">{{ region_data|length }}</div>
+        <div class="stat-label">Traffic Regions</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-number" id="avg-hourly">0</div>
+        <div class="stat-label">Avg. Hourly</div>
+    </div>
+    <div class="stat-card live-indicator">
+        <div class="d-flex align-items-center">
+            <span class="badge bg-success me-1">LIVE</span>
+            <span class="small text-muted" id="last-updated">Never updated</span>
+        </div>
+        <div class="stat-label">
+            Metrics Status
+            <div class="form-check form-switch mt-1">
+                <input class="form-check-input" type="checkbox" id="liveToggle" checked>
+                <label class="form-check-label small" for="liveToggle">Auto-refresh</label>
+            </div>
+        </div>
+    </div>
+    <!-- The metrics status container added by JavaScript will be dynamically placed here -->
+</div> 

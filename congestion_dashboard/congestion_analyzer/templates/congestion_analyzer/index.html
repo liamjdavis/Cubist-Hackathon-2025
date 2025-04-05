@@ -1,569 +1,365 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no">
-    <title>Traffic Congestion Dashboard</title>
+{% extends 'congestion_analyzer/base.html' %}
+{% load static %}
+
+{% block title %}Traffic Dashboard - Analyzer{% endblock %}
+
+{% block content %}
+    {% include 'congestion_analyzer/includes/_header.html' %}
     
-    <!-- Bootstrap CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    {% include 'congestion_analyzer/includes/_controls.html' %}
     
-    <!-- Perspective Preloads for Faster Loading -->
-    <link rel="preload" href="https://cdn.jsdelivr.net/npm/@finos/perspective-viewer/dist/wasm/perspective-viewer.wasm" as="fetch" type="application/wasm" crossorigin="anonymous" />
-    <link rel="preload" href="https://cdn.jsdelivr.net/npm/@finos/perspective/dist/wasm/perspective-server.wasm" as="fetch" type="application/wasm" crossorigin="anonymous" />
+    {% include 'congestion_analyzer/includes/_stats.html' %}
     
-    <!-- Latest Perspective Viewer CSS -->
-    <link rel="stylesheet" crossorigin="anonymous" href="https://cdn.jsdelivr.net/npm/@finos/perspective-viewer/dist/css/themes.css" />
+    <perspective-viewer id="viewer"></perspective-viewer>
     
-    <style>
-        #app {
-            display: flex;
-            flex-direction: column;
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: #f8f9fa;
-        }
-        
-        #header {
-            padding: 10px 15px;
-            background-color: #0d6efd;
-            color: white;
-        }
-        
-        #controls {
-            display: flex;
-            padding: 10px 15px;
-            border-bottom: 1px solid #dee2e6;
-            background-color: white;
-            flex-wrap: wrap;
-        }
-        
-        .control-group {
-            margin-right: 24px;
-            display: flex;
-            flex-direction: column;
-        }
-        
-        .control-label {
-            font-size: 12px;
-            color: #6c757d;
-            margin-bottom: 4px;
-        }
-        
-        .control-input {
-            padding: 4px 8px;
-            border: 1px solid #ced4da;
-            border-radius: 4px;
-        }
-        
-        .control-select {
-            min-width: 160px;
-        }
-        
-        #stats {
-            display: flex;
-            padding: 10px 15px;
-            background-color: #f8f9fa;
-            border-bottom: 1px solid #dee2e6;
-        }
-        
-        .stat-card {
-            background-color: white;
-            border-radius: 4px;
-            padding: 15px;
-            margin-right: 15px;
-            min-width: 140px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }
-        
-        .stat-number {
-            font-size: 24px;
-            font-weight: bold;
-            color: #0d6efd;
-        }
-        
-        .stat-label {
-            font-size: 12px;
-            color: #6c757d;
-        }
-        
-        perspective-viewer {
-            flex: 1;
-            overflow: visible;
-            border-top: 1px solid #dee2e6;
-        }
-        
-        /* Spinner */
-        #loading {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: rgba(255,255,255,0.7);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-        }
-        
-        .loading-text {
-            margin-top: 15px;
-            font-size: 14px;
-            color: #6c757d;
-        }
-        
-        /* Toggle button */
-        .view-toggle {
-            display: flex;
-            border-radius: 4px;
-            overflow: hidden;
-            border: 1px solid #0d6efd;
-        }
-        
-        .view-toggle button {
-            background: none;
-            border: none;
-            padding: 6px 12px;
-            font-size: 12px;
-            cursor: pointer;
-        }
-        
-        .view-toggle button.active {
-            background-color: #0d6efd;
-            color: white;
-        }
-        
-        .view-toggle button:not(.active) {
-            color: #0d6efd;
-        }
-        
-        .live-indicator {
-            margin-left: auto;
-        }
-        .live-dot {
-            display: inline-block;
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background-color: #28a745;
-            margin-right: 5px;
-            animation: pulse 2s infinite;
-        }
-        @keyframes pulse {
-            0% { opacity: 1; }
-            50% { opacity: 0.3; }
-            100% { opacity: 1; }
-        }
-        .badge.pulse {
-            animation: badgePulse 1s;
-        }
-        @keyframes badgePulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.2); }
-            100% { transform: scale(1); }
-        }
-        #last-updated {
-            font-size: 10px;
-            display: block;
-            margin-top: 4px;
-        }
-    </style>
-</head>
-<body>
-    <div id="app">
-        <div id="header">
-            <h4>Traffic Congestion Dashboard</h4>
+    <div id="loading">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
         </div>
-        
-        <div id="controls">
-            <div class="control-group">
-                <span class="control-label">Region</span>
-                <select id="region-filter" class="control-input control-select">
-                    <option value="all">All Regions</option>
-                </select>
-            </div>
-            
-            <div class="control-group">
-                <span class="control-label">Vehicle Class</span>
-                <select id="vehicle-filter" class="control-input control-select">
-                    <option value="all">All Vehicles</option>
-                </select>
-            </div>
-            
-            <div class="control-group">
-                <span class="control-label">Time Period</span>
-                <div class="view-toggle">
-                    <button id="hourly-view" class="active">Hourly</button>
-                    <button id="daily-view">Daily</button>
-                    <button id="monthly-view">Monthly</button>
-                </div>
-            </div>
-            
-            <div class="control-group" style="margin-left: auto;">
-                <span class="control-label">Status</span>
-                <span id="status-indicator" style="font-size: 12px; color: #28a745;">Ready</span>
-            </div>
-        </div>
-        
-        <div id="stats">
-            <div class="stat-card">
-                <div class="stat-number" id="total-entries">{{ total_entries }}</div>
-                <div class="stat-label">Total Records</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number" id="total-volume">{{ total_volume }}</div>
-                <div class="stat-label">Vehicle Entries</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number" id="region-count">{{ region_data|length }}</div>
-                <div class="stat-label">Traffic Regions</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number" id="avg-hourly">0</div>
-                <div class="stat-label">Avg. Hourly</div>
-            </div>
-            <div class="stat-card live-indicator">
-                <div class="d-flex align-items-center">
-                    <span class="badge bg-success me-1">LIVE</span>
-                    <span class="small text-muted" id="last-updated">Never updated</span>
-                </div>
-                <div class="stat-label">
-                    Metrics Status
-                    <div class="form-check form-switch mt-1">
-                        <input class="form-check-input" type="checkbox" id="liveToggle" checked>
-                        <label class="form-check-label small" for="liveToggle">Auto-refresh</label>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <perspective-viewer id="viewer"></perspective-viewer>
-        
-        <div id="loading">
-            <div class="spinner-border text-primary" role="status">
-                <span class="visually-hidden">Loading...</span>
-            </div>
-            <div class="loading-text" id="loading-text">Initializing dashboard...</div>
-        </div>
+        <div class="loading-text" id="loading-text">Initializing dashboard...</div>
     </div>
     
-    <script type="module">
-        import "https://cdn.jsdelivr.net/npm/@finos/perspective-viewer@3.4.0/dist/cdn/perspective-viewer.js";
-        import "https://cdn.jsdelivr.net/npm/@finos/perspective-viewer-datagrid@3.4.0/dist/cdn/perspective-viewer-datagrid.js";
-        import "https://cdn.jsdelivr.net/npm/@finos/perspective-viewer-d3fc@3.4.0/dist/cdn/perspective-viewer-d3fc.js";
-        import perspective from "https://cdn.jsdelivr.net/npm/@finos/perspective@3.4.0/dist/cdn/perspective.js";
+    {# Debug Panel Element - added here for structure, managed by JS #}
+    <div id="debug-panel" style="display: none;">
+        <div id="debug-panel-header">
+            <span>Metrics Debug Panel</span>
+            <span id="debug-panel-close">×</span>
+        </div>
+        <div class="debug-metrics">
+            <div class="debug-metric-label">API Endpoint:</div>
+            <div class="debug-metric-value" id="debug-api-endpoint">-</div>
+            <div class="debug-metric-label">Refresh Interval:</div>
+            <div class="debug-metric-value" id="debug-refresh-interval">-</div>
+            <div class="debug-metric-label">Auto Refresh:</div>
+            <div class="debug-metric-value" id="debug-auto-refresh">Enabled</div>
+            <div class="debug-metric-label">Last API Call:</div>
+            <div class="debug-metric-value" id="debug-last-call">Never</div>
+            <div class="debug-metric-label">Last Response Time:</div>
+            <div class="debug-metric-value" id="debug-response-time">-</div>
+            <div class="debug-metric-label">Records Fetched:</div>
+            <div class="debug-metric-value" id="debug-records-count">0</div>
+        </div>
+        <div id="debug-panel-log"></div>
+    </div>
+
+{% endblock content %}
+
+{% block scripts %}
+<script type="module">
+    import "https://cdn.jsdelivr.net/npm/@finos/perspective-viewer@3.4.0/dist/cdn/perspective-viewer.js";
+    import "https://cdn.jsdelivr.net/npm/@finos/perspective-viewer-datagrid@3.4.0/dist/cdn/perspective-viewer-datagrid.js";
+    import "https://cdn.jsdelivr.net/npm/@finos/perspective-viewer-d3fc@3.4.0/dist/cdn/perspective-viewer-d3fc.js";
+    import perspective from "https://cdn.jsdelivr.net/npm/@finos/perspective@3.4.0/dist/cdn/perspective.js";
+    
+    // Live metrics streaming configuration
+    const API_ENDPOINT = 'https://data.ny.gov/resource/t6yz-b64h.json';
+    const METRICS_REFRESH_INTERVAL = 180000; // 3 minutes (was 30 seconds)
+    
+    console.debug('[Metrics] Metrics module initialized with refresh interval:', METRICS_REFRESH_INTERVAL);
+    console.debug('[Metrics] API endpoint:', API_ENDPOINT);
+    
+    // Get pre-aggregated data from server
+    const aggData = JSON.parse('{{ agg_json|escapejs }}');
+    console.log(`Received pre-aggregated data with ${aggData.length} records`);
+    
+    // Get UI elements
+    const viewer = document.getElementById('viewer');
+    const loading = document.getElementById('loading');
+    const loadingText = document.getElementById('loading-text');
+    const statusIndicator = document.getElementById('status-indicator');
+    const regionFilter = document.getElementById('region-filter');
+    const vehicleFilter = document.getElementById('vehicle-filter');
+    const hourlyView = document.getElementById('hourly-view');
+    const dailyView = document.getElementById('daily-view');
+    const monthlyView = document.getElementById('monthly-view');
+    const avgHourly = document.getElementById('avg-hourly');
+    const totalEntries = document.getElementById('total-entries');
+    const totalVolume = document.getElementById('total-volume');
+    const regionCount = document.getElementById('region-count');
+    const debugPanel = document.getElementById('debug-panel');
+    
+    // Current view state
+    let currentView = 'hourly';
+    let worker;
+    let table;
+    let metricsIntervalId = null;
+    
+    // Function to fetch live metrics from NY API
+    async function fetchLiveMetrics() {
+        // Check if live toggle is enabled
+        const liveToggle = document.getElementById('liveToggle');
+        if (liveToggle && !liveToggle.checked) {
+            console.debug('[Metrics] Live updates paused by user toggle');
+            return; // Don't fetch if paused
+        }
         
-        // Live metrics streaming configuration
-        const API_ENDPOINT = 'https://data.ny.gov/resource/t6yz-b64h.json';
-        const METRICS_REFRESH_INTERVAL = 180000; // 3 minutes (was 30 seconds)
-        
-        console.debug('[Metrics] Metrics module initialized with refresh interval:', METRICS_REFRESH_INTERVAL);
-        console.debug('[Metrics] API endpoint:', API_ENDPOINT);
-        
-        // Get pre-aggregated data from server
-        const aggData = JSON.parse('{{ agg_json|escapejs }}');
-        console.log(`Received pre-aggregated data with ${aggData.length} records`);
-        
-        // Get UI elements
-        const viewer = document.getElementById('viewer');
-        const loading = document.getElementById('loading');
-        const loadingText = document.getElementById('loading-text');
-        const statusIndicator = document.getElementById('status-indicator');
-        const regionFilter = document.getElementById('region-filter');
-        const vehicleFilter = document.getElementById('vehicle-filter');
-        const hourlyView = document.getElementById('hourly-view');
-        const dailyView = document.getElementById('daily-view');
-        const monthlyView = document.getElementById('monthly-view');
-        const avgHourly = document.getElementById('avg-hourly');
-        const totalEntries = document.getElementById('total-entries');
-        const totalVolume = document.getElementById('total-volume');
-        const regionCount = document.getElementById('region-count');
-        
-        // Current view state
-        let currentView = 'hourly';
-        let worker;
-        let table;
-        
-        // Function to fetch live metrics from NY API
-        async function fetchLiveMetrics() {
-            // Check if live toggle is enabled
-            const liveToggle = document.getElementById('liveToggle');
-            if (liveToggle && !liveToggle.checked) {
-                console.debug('[Metrics] Live updates paused by user toggle');
-                // If disabled, schedule next check but don't fetch data
-                setTimeout(fetchLiveMetrics, METRICS_REFRESH_INTERVAL);
-                return;
+        console.debug('[Metrics] Starting metrics refresh cycle');
+        const metricsStatusContainer = ensureMetricsStatusContainer();
+        const metricsStatus = addMetricsStatusIndicator(metricsStatusContainer, '(refreshing)');
+
+        try {
+            // Build API query with parameters for optimized fetching
+            const params = new URLSearchParams({
+                '$select': 'vehicle_class, detection_region, sum(crz_entries) as total_entries, count(*) as record_count',
+                '$group': 'vehicle_class, detection_region',
+                '$where': 'crz_entries > 0',  // Filter out zeros for performance
+                '$limit': '10000',
+                '$order': 'vehicle_class'     // Ordering helps with client-side processing
+            });
+            
+            console.debug(`[Metrics] Fetching data from API with params: ${params.toString()}`);
+            
+            const apiStartTime = performance.now();
+            console.time('metrics-api-fetch');
+            const response = await fetch(`${API_ENDPOINT}?${params}`);
+            
+            if (!response.ok) {
+                throw new Error(`API error: ${response.status}`);
             }
             
-            console.debug('[Metrics] Starting metrics refresh cycle');
+            const data = await response.json();
+            const apiEndTime = performance.now();
+            const apiResponseTime = Math.round(apiEndTime - apiStartTime);
+            console.timeEnd('metrics-api-fetch');
+            console.debug(`[Metrics] API response time: ${apiResponseTime}ms`);
             
-            try {
-                // Update status for metrics only - with safer element selection
-                const metricsStatus = document.createElement('span');
-                metricsStatus.style.fontSize = '10px';
-                metricsStatus.style.marginLeft = '5px';
-                metricsStatus.style.color = '#6c757d';
-                metricsStatus.textContent = '(refreshing)';
-                metricsStatus.id = 'metrics-refresh-status';
+            updateDebugPanelMetrics(apiResponseTime, data.length);
+            
+            console.debug(`[Metrics] Received ${data.length} records from API`);
+            if (data.length > 0) console.debug('[Metrics] Sample data record:', data[0]);
+            
+            // Update metrics
+            if (data && data.length > 0) {
+                console.time('metrics-update');
+                console.debug('[Metrics] Processing metrics calculations');
                 
-                // Safer approach to adding the status indicator
-                let statusContainer = document.getElementById('metrics-status-container');
-                if (!statusContainer) {
-                    // Create a container if it doesn't exist yet
-                    statusContainer = document.createElement('div');
-                    statusContainer.id = 'metrics-status-container';
-                    statusContainer.style.position = 'absolute';
-                    statusContainer.style.bottom = '5px';
-                    statusContainer.style.right = '5px';
-                    statusContainer.style.zIndex = '1000';
-                    document.getElementById('stats').appendChild(statusContainer);
-                }
+                const totalRecords = data.reduce((sum, item) => sum + parseInt(item.record_count || 0), 0);
+                console.debug(`[Metrics] Total records calculated: ${totalRecords}`);
+                totalEntries.textContent = totalRecords.toLocaleString();
                 
-                // Remove status indicator safely
-                if (statusContainer) {
-                    while (statusContainer.firstChild) {
-                        statusContainer.removeChild(statusContainer.firstChild);
-                    }
-                }
+                const sumEntries = data.reduce((sum, item) => sum + parseInt(item.total_entries || 0), 0);
+                console.debug(`[Metrics] Total vehicle entries calculated: ${sumEntries}`);
+                totalVolume.textContent = sumEntries.toLocaleString();
                 
-                // Add new status
-                statusContainer.appendChild(metricsStatus);
+                const uniqueRegions = new Set(data.map(item => item.detection_region)).size;
+                console.debug(`[Metrics] Unique regions found: ${uniqueRegions}`);
+                regionCount.textContent = uniqueRegions.toLocaleString();
                 
-                // Build API query with parameters for optimized fetching
-                // Using SoQL to limit and aggregate data server-side
-                const params = new URLSearchParams({
-                    '$select': 'vehicle_class, detection_region, sum(crz_entries) as total_entries, count(*) as record_count',
-                    '$group': 'vehicle_class, detection_region',
-                    '$where': 'crz_entries > 0',  // Filter out zeros for performance
-                    '$limit': '10000',
-                    '$order': 'vehicle_class'     // Ordering helps with client-side processing
-                });
+                const hourlyAvg = Math.round(sumEntries / 24);
+                console.debug(`[Metrics] Average hourly calculated: ${hourlyAvg}`);
+                avgHourly.textContent = hourlyAvg.toLocaleString();
                 
-                console.debug(`[Metrics] Fetching data from API with params: ${params.toString()}`);
+                flashStatNumbers();
                 
-                // Track API response time
-                const apiStartTime = performance.now();
-                console.time('metrics-api-fetch');
-                const response = await fetch(`${API_ENDPOINT}?${params}`);
-                
-                if (!response.ok) {
-                    throw new Error(`API error: ${response.status}`);
-                }
-                
-                const data = await response.json();
-                const apiEndTime = performance.now();
-                const apiResponseTime = Math.round(apiEndTime - apiStartTime);
-                console.timeEnd('metrics-api-fetch');
-                console.debug(`[Metrics] API response time: ${apiResponseTime}ms`);
-                
-                // Update debug panel with response time and record count if it exists
-                if (document.getElementById('debug-response-time')) {
-                    document.getElementById('debug-response-time').textContent = `${apiResponseTime}ms`;
-                    document.getElementById('debug-records-count').textContent = data.length;
-                }
-                
-                console.debug(`[Metrics] Received ${data.length} records from API`);
-                
-                // Log a sample of the data for debugging
-                if (data.length > 0) {
-                    console.debug('[Metrics] Sample data record:', data[0]);
-                }
-                
-                // Update metrics
-                if (data && data.length > 0) {
-                    console.time('metrics-update');
-                    console.debug('[Metrics] Processing metrics calculations');
-                    
-                    // Calculate total records
-                    const totalRecords = data.reduce((sum, item) => sum + parseInt(item.record_count || 0), 0);
-                    console.debug(`[Metrics] Total records calculated: ${totalRecords}`);
-                    totalEntries.textContent = totalRecords.toLocaleString();
-                    
-                    // Sum all entries
-                    const sumEntries = data.reduce((sum, item) => sum + parseInt(item.total_entries || 0), 0);
-                    console.debug(`[Metrics] Total vehicle entries calculated: ${sumEntries}`);
-                    totalVolume.textContent = sumEntries.toLocaleString();
-                    
-                    // Count unique regions
-                    const uniqueRegions = new Set(data.map(item => item.detection_region)).size;
-                    console.debug(`[Metrics] Unique regions found: ${uniqueRegions}`);
-                    regionCount.textContent = uniqueRegions.toLocaleString();
-                    
-                    // Calculate average hourly (assuming 24-hour distribution)
-                    const hourlyAvg = Math.round(sumEntries / 24);
-                    console.debug(`[Metrics] Average hourly calculated: ${hourlyAvg}`);
-                    avgHourly.textContent = hourlyAvg.toLocaleString();
-                    
-                    // Add visual feedback for fresh data
-                    document.querySelectorAll('.stat-number').forEach(el => {
-                        el.style.transition = 'color 0.5s';
-                        el.style.color = '#0d9e5f'; // Briefly change color
-                        setTimeout(() => {
-                            el.style.color = '#0d6efd'; // Return to original color
-                        }, 800);
-                    });
-                    
-                    console.timeEnd('metrics-update');
-                    console.debug('[Metrics] UI updated with new values');
-                    
-                    // Update last updated timestamp
-                    updateLastUpdatedTime();
-                } else {
-                    console.warn('[Metrics] Received empty dataset from API');
-                }
-                
-                // Remove status indicator
-                if (metricsStatus.parentNode) {
-                    metricsStatus.parentNode.removeChild(metricsStatus);
-                }
-                
-                // Make the LIVE indicator pulse
-                const liveIndicator = document.querySelector('.badge.bg-success');
-                if (liveIndicator) {
-                    liveIndicator.classList.add('pulse');
-                    setTimeout(() => {
-                        liveIndicator.classList.remove('pulse');
-                    }, 1000);
-                }
-                
-                console.debug(`[Metrics] Refresh cycle complete, next update in ${METRICS_REFRESH_INTERVAL/1000} seconds`);
-                
-            } catch (error) {
-                console.error('[Metrics] Error fetching live metrics:', error);
-                console.debug('[Metrics] API request failed with error:', error.message);
-                // Add error indicator to stats section without disrupting main visualization
-                const errorIndicator = document.createElement('div');
-                errorIndicator.className = 'mt-1 small text-danger';
-                errorIndicator.textContent = 'Metrics refresh failed';
-                errorIndicator.style.fontSize = '10px';
-                
-                const statsSection = document.getElementById('stats');
-                statsSection.appendChild(errorIndicator);
-                console.debug('[Metrics] Error indicator added to the DOM');
-                
-                // Update the LIVE indicator to show error
-                const liveIndicator = document.querySelector('.badge.bg-success');
-                if (liveIndicator) {
-                    liveIndicator.className = 'badge bg-danger me-1';
-                    liveIndicator.textContent = 'ERROR';
-                    console.debug('[Metrics] Live indicator changed to ERROR state');
-                    
-                    // Reset after 10 seconds
-                    setTimeout(() => {
+                console.timeEnd('metrics-update');
+                console.debug('[Metrics] UI updated with new values');
+                updateLastUpdatedTime();
+            } else {
+                console.warn('[Metrics] Received empty dataset from API');
+            }
+            
+            removeMetricsStatusIndicator(metricsStatus);
+            pulseLiveIndicator();
+            console.debug(`[Metrics] Refresh cycle complete`);
+            
+        } catch (error) {
+            console.error('[Metrics] Error fetching live metrics:', error);
+            console.debug('[Metrics] API request failed with error:', error.message);
+            handleMetricsFetchError(error);
+            removeMetricsStatusIndicator(metricsStatus);
+        }
+    }
+
+    function ensureMetricsStatusContainer() {
+        let container = document.getElementById('metrics-status-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'metrics-status-container';
+            container.style.position = 'absolute';
+            container.style.bottom = '5px';
+            container.style.right = '5px';
+            container.style.zIndex = '1000'; // Ensure visibility
+            const statsDiv = document.getElementById('stats');
+            if (statsDiv) statsDiv.appendChild(container);
+            else console.error("Could not find #stats div to append status container");
+        }
+        // Clear previous indicators
+        while (container.firstChild) {
+            container.removeChild(container.firstChild);
+        }
+        return container;
+    }
+
+    function addMetricsStatusIndicator(container, text) {
+        const indicator = document.createElement('span');
+        indicator.style.fontSize = '10px';
+        indicator.style.marginLeft = '5px';
+        indicator.style.color = '#6c757d';
+        indicator.textContent = text;
+        indicator.id = 'metrics-refresh-status';
+        container.appendChild(indicator);
+        return indicator;
+    }
+
+    function removeMetricsStatusIndicator(indicator) {
+        if (indicator && indicator.parentNode) {
+            indicator.parentNode.removeChild(indicator);
+        }
+    }
+
+    function flashStatNumbers() {
+        document.querySelectorAll('.stat-number').forEach(el => {
+            el.style.transition = 'color 0.5s';
+            el.style.color = '#0d9e5f'; // Briefly change color
+            setTimeout(() => {
+                el.style.color = '#0d6efd'; // Return to original color
+            }, 800);
+        });
+    }
+
+    function pulseLiveIndicator() {
+        const liveIndicator = document.querySelector('.badge.bg-success');
+        if (liveIndicator) {
+            liveIndicator.classList.add('pulse');
+            setTimeout(() => {
+                liveIndicator.classList.remove('pulse');
+            }, 1000);
+        }
+    }
+
+    function handleMetricsFetchError(error) {
+        const errorIndicator = document.createElement('div');
+        errorIndicator.className = 'mt-1 small text-danger';
+        errorIndicator.textContent = 'Metrics refresh failed';
+        errorIndicator.style.fontSize = '10px';
+        
+        const statsSection = document.getElementById('stats');
+        if (statsSection) statsSection.appendChild(errorIndicator);
+        console.debug('[Metrics] Error indicator added to the DOM');
+        
+        const liveIndicator = document.querySelector('.badge');
+        if (liveIndicator) {
+            liveIndicator.className = 'badge bg-danger me-1';
+            liveIndicator.textContent = 'ERROR';
+            console.debug('[Metrics] Live indicator changed to ERROR state');
+            
+            // Reset after 10 seconds
+            setTimeout(() => {
+                if (liveIndicator.classList.contains('bg-danger')) { // Check if still in error state
+                    const liveToggle = document.getElementById('liveToggle');
+                    if (liveToggle && liveToggle.checked) {
                         liveIndicator.className = 'badge bg-success me-1';
                         liveIndicator.textContent = 'LIVE';
-                        console.debug('[Metrics] Live indicator reset to LIVE state after timeout');
-                    }, 10000);
-                }
-                
-                // Auto-remove error indicator after 5 seconds
-                setTimeout(() => {
-                    if (errorIndicator.parentNode) {
-                        errorIndicator.parentNode.removeChild(errorIndicator);
-                        console.debug('[Metrics] Error indicator removed from DOM after timeout');
+                    } else {
+                        liveIndicator.className = 'badge bg-secondary me-1';
+                        liveIndicator.textContent = 'PAUSED';
                     }
-                }, 5000);
-            }
-            
-            // Schedule next update
-            setTimeout(fetchLiveMetrics, METRICS_REFRESH_INTERVAL);
+                    console.debug('[Metrics] Live indicator reset after timeout');
+                }
+            }, 10000);
         }
         
-        // Update loading status
-        function updateStatus(message, isLoading = true) {
-            loadingText.textContent = message;
-            if (!isLoading) {
-                loading.style.display = 'none';
-                statusIndicator.textContent = 'Ready';
-                statusIndicator.style.color = '#28a745';
-            } else {
-                statusIndicator.textContent = 'Processing...';
-                statusIndicator.style.color = '#fd7e14';
+        setTimeout(() => {
+            if (errorIndicator.parentNode) {
+                errorIndicator.parentNode.removeChild(errorIndicator);
+                console.debug('[Metrics] Error indicator removed from DOM after timeout');
             }
+        }, 5000);
+    }
+    
+    // Update loading status
+    function updateStatus(message, isLoading = true) {
+        loadingText.textContent = message;
+        if (!isLoading) {
+            loading.style.display = 'none';
+            statusIndicator.textContent = 'Ready';
+            statusIndicator.style.color = '#28a745';
+        } else {
+            loading.style.display = 'flex'; // Ensure it's visible
+            statusIndicator.textContent = 'Processing...';
+            statusIndicator.style.color = '#fd7e14';
         }
+    }
+    
+    // Initialize the dashboard with pre-aggregated data
+    async function initDashboard() {
+        updateStatus('Initializing Perspective engine...');
         
-        // Initialize the dashboard with pre-aggregated data
-        async function initDashboard() {
-            updateStatus('Initializing Perspective engine...');
+        try {
+            updateStatus('Creating Perspective worker...');
+            worker = await perspective.worker();
             
-            try {
-                // Step 1: Create Perspective worker
-                updateStatus('Creating Perspective worker...');
-                worker = await perspective.worker();
-                
-                // Step 2: Create Perspective table from pre-aggregated data
-                updateStatus(`Loading pre-aggregated data (${aggData.length} records)...`);
-                console.time('table-creation');
-                
-                // Create table with pre-aggregated data
-                table = await worker.table(aggData);
-                
-                console.timeEnd('table-creation');
-                
-                // Step 3: Populate filters from pre-aggregated data
-                updateStatus('Generating filters...');
-                populateFilters();
-                
-                // Step 4: Load the table into the viewer with custom lazy loading setting
-                updateStatus('Initializing visualization...');
-                console.time('viewer-load');
-                
-                // Set lazy loading threshold to 25%
-                await viewer.setAttribute('lazy', '0.25');
-                
-                await viewer.load(Promise.resolve(table));
-                console.timeEnd('viewer-load');
-                
-                // Step 5: Apply initial view configuration
-                updateStatus('Configuring visualization...');
-                console.time('initial-view');
-                await applyHourlyView();
-                console.timeEnd('initial-view');
-                
-                // Add event listeners
-                setupEventListeners();
-                
-                // Calculate and update statistics
-                updateStats();
-                
-                // Hide loading indicator
-                updateStatus('Dashboard ready', false);
-                
-            } catch (error) {
-                console.error('Error initializing dashboard:', error);
-                updateStatus(`Error: ${error.message}`);
-                loading.style.backgroundColor = 'rgba(255,0,0,0.1)';
-            }
+            updateStatus(`Loading pre-aggregated data (${aggData.length} records)...`);
+            console.time('table-creation');
+            table = await worker.table(aggData);
+            console.timeEnd('table-creation');
+            
+            updateStatus('Generating filters...');
+            populateFilters();
+            
+            updateStatus('Initializing visualization...');
+            console.time('viewer-load');
+            await viewer.setAttribute('lazy', '0.25'); // Set lazy loading
+            await viewer.load(Promise.resolve(table));
+            console.timeEnd('viewer-load');
+            
+            updateStatus('Configuring visualization...');
+            console.time('initial-view');
+            await applyHourlyView();
+            console.timeEnd('initial-view');
+            
+            setupEventListeners();
+            updateStats(); // Calculate initial stats
+            
+            updateStatus('Dashboard ready', false);
+            
+            // Start live metrics only after dashboard init is successful
+            startLiveMetrics(); 
+            updateLastUpdatedTime(); // Set initial timestamp
+            
+        } catch (error) {
+            console.error('Error initializing dashboard:', error);
+            updateStatus(`Initialization Error: ${error.message}`, true); // Keep loading indicator on error
+            loading.style.backgroundColor = 'rgba(255,0,0,0.1)'; // Indicate error state
         }
+    }
+    
+    // Populate filter dropdowns from pre-aggregated data
+    function populateFilters() {
+        console.time('populate-filters');
         
-        // Populate filter dropdowns from pre-aggregated data
-        function populateFilters() {
-            console.time('populate-filters');
-            
-            // Extract unique values from pre-aggregated data
-            const regions = [...new Set(aggData.map(d => d.detection_region))].sort();
-            regions.forEach(region => {
-                const option = document.createElement('option');
-                option.value = region;
-                option.textContent = region;
-                regionFilter.appendChild(option);
-            });
-            
-            const vehicles = [...new Set(aggData.map(d => d.vehicle_class))].sort();
-            vehicles.forEach(vehicle => {
-                const option = document.createElement('option');
-                option.value = vehicle;
-                option.textContent = vehicle;
-                vehicleFilter.appendChild(option);
-            });
-            
-            // Add info about pre-aggregation
-            const infoElement = document.createElement('div');
+        // Clear existing options first (except 'All')
+        regionFilter.length = 1;
+        vehicleFilter.length = 1;
+
+        const regions = [...new Set(aggData.map(d => d.detection_region))].sort();
+        regions.forEach(region => {
+            const option = document.createElement('option');
+            option.value = region;
+            option.textContent = region;
+            regionFilter.appendChild(option);
+        });
+        
+        const vehicles = [...new Set(aggData.map(d => d.vehicle_class))].sort();
+        vehicles.forEach(vehicle => {
+            const option = document.createElement('option');
+            option.value = vehicle;
+            option.textContent = vehicle;
+            vehicleFilter.appendChild(option);
+        });
+        
+        // Add info about pre-aggregation data
+        ensurePreAggInfoElement();
+
+        console.timeEnd('populate-filters');
+    }
+
+    function ensurePreAggInfoElement() {
+        let infoElement = document.getElementById('preagg-info');
+        if (!infoElement) {
+            const controlsContainer = document.getElementById('controls');
+            infoElement = document.createElement('div');
+            infoElement.id = 'preagg-info';
             infoElement.className = 'control-group';
             infoElement.style.marginLeft = 'auto';
             infoElement.style.marginRight = '20px';
@@ -573,399 +369,347 @@
             infoLabel.textContent = 'Data Status';
             
             const infoText = document.createElement('span');
+            infoText.id = 'preagg-info-text';
             infoText.style.fontSize = '12px';
             infoText.style.color = '#198754';
-            infoText.textContent = `Pre-aggregated (${aggData.length} records)`;
             
             infoElement.appendChild(infoLabel);
             infoElement.appendChild(infoText);
-            
-            // Add to controls
-            const controlsContainer = document.getElementById('controls');
             controlsContainer.appendChild(infoElement);
-            
-            console.timeEnd('populate-filters');
         }
+        // Update text content
+        document.getElementById('preagg-info-text').textContent = `Pre-aggregated (${aggData.length} records)`;
+    }
+    
+    // Setup event listeners
+    function setupEventListeners() {
+        hourlyView.addEventListener('click', () => { setActiveView('hourly'); applyHourlyView(); });
+        dailyView.addEventListener('click', () => { setActiveView('daily'); applyDailyView(); });
+        monthlyView.addEventListener('click', () => { setActiveView('monthly'); applyMonthlyView(); });
         
-        // Setup event listeners
-        function setupEventListeners() {
-            // View toggles
-            hourlyView.addEventListener('click', () => {
-                setActiveView('hourly');
-                applyHourlyView();
+        // Filters with debouncing
+        let filterTimeout;
+        const debouncedFilter = () => {
+            clearTimeout(filterTimeout);
+            filterTimeout = setTimeout(applyFilters, 300);
+        };
+        regionFilter.addEventListener('change', debouncedFilter);
+        vehicleFilter.addEventListener('change', debouncedFilter);
+
+        // Live toggle listener
+        document.getElementById('liveToggle').addEventListener('change', handleLiveToggle);
+
+        // Debug Panel listeners (only if debug panel exists)
+        if (debugPanel) {
+            document.getElementById('debug-panel-close').addEventListener('click', toggleDebugPanel);
+            // Add manual trigger if button exists
+            const triggerBtn = document.getElementById('manual-metrics-trigger');
+            if(triggerBtn) triggerBtn.addEventListener('click', () => { 
+                console.debug('[Metrics] Manual update triggered'); 
+                fetchLiveMetrics(); 
             });
-            
-            dailyView.addEventListener('click', () => {
-                setActiveView('daily');
-                applyDailyView();
-            });
-            
-            monthlyView.addEventListener('click', () => {
-                setActiveView('monthly');
-                applyMonthlyView();
-            });
-            
-            // Filters with debouncing
-            let filterTimeout;
-            function debouncedFilter() {
-                clearTimeout(filterTimeout);
-                filterTimeout = setTimeout(applyFilters, 300);
-            }
-            
-            regionFilter.addEventListener('change', debouncedFilter);
-            vehicleFilter.addEventListener('change', debouncedFilter);
+            const togglePanelBtn = document.getElementById('toggle-debug-panel');
+            if(togglePanelBtn) togglePanelBtn.addEventListener('click', toggleDebugPanel);
         }
-        
-        // Set active view button
-        function setActiveView(view) {
-            currentView = view;
-            [hourlyView, dailyView, monthlyView].forEach(btn => {
-                btn.classList.remove('active');
-            });
-            
-            if (view === 'hourly') hourlyView.classList.add('active');
-            if (view === 'daily') dailyView.classList.add('active');
-            if (view === 'monthly') monthlyView.classList.add('active');
-        }
-        
-        // Apply hourly view - optimized for pre-aggregated data
-        async function applyHourlyView() {
-            statusIndicator.textContent = 'Applying hourly view...';
-            statusIndicator.style.color = '#fd7e14';
-            
-            try {
-                await viewer.restore({
-                    plugin: "Y Bar",
-                    columns: ["crz_entries"],
-                    group_by: ["detection_region", "hour_of_day"],
-                    split_by: ["vehicle_class"],
-                    sort: [["hour_of_day", "asc"]],
-                    aggregates: {
-                        crz_entries: "sum"
-                    }
-                });
-                
-                statusIndicator.textContent = 'Ready';
-                statusIndicator.style.color = '#28a745';
-                return true;
-            } catch (error) {
-                console.error('Error applying hourly view:', error);
-                statusIndicator.textContent = 'Error';
-                statusIndicator.style.color = '#dc3545';
-                return false;
-            }
-        }
-        
-        // Apply daily view - check if day_of_week is available
-        async function applyDailyView() {
-            statusIndicator.textContent = 'Applying daily view...';
-            statusIndicator.style.color = '#fd7e14';
-            
-            try {
-                // Check if day_of_week is in the pre-aggregated data
-                const hasDayOfWeek = aggData.length > 0 && 'day_of_week' in aggData[0];
-                
-                if (hasDayOfWeek) {
-                    await viewer.restore({
-                        plugin: "Y Bar",
-                        columns: ["crz_entries"],
-                        group_by: ["detection_region", "day_of_week"],
-                        split_by: ["vehicle_class"],
-                        sort: [["day_of_week_int", "asc"]],
-                        aggregates: {
-                            crz_entries: "sum"
-                        }
-                    });
-                } else {
-                    // Fallback to region-based view if day_of_week not available
-                    await viewer.restore({
-                        plugin: "Treemap",
-                        columns: ["crz_entries"],
-                        group_by: ["detection_region", "vehicle_class"],
-                        aggregates: {
-                            crz_entries: "sum"
-                        }
-                    });
-                    statusIndicator.textContent = 'Daily view not available in pre-aggregated data';
-                    statusIndicator.style.color = '#fd7e14';
-                }
-                
-                return true;
-            } catch (error) {
-                console.error('Error applying daily view:', error);
-                statusIndicator.textContent = 'Error';
-                statusIndicator.style.color = '#dc3545';
-                return false;
-            }
-        }
-        
-        // Apply monthly view - check if month_year is available
-        async function applyMonthlyView() {
-            statusIndicator.textContent = 'Applying monthly view...';
-            statusIndicator.style.color = '#fd7e14';
-            
-            try {
-                // Check if month_year is in the pre-aggregated data
-                const hasMonthYear = aggData.length > 0 && 'month_year' in aggData[0];
-                
-                if (hasMonthYear) {
-                    await viewer.restore({
-                        plugin: "X/Y Line",
-                        columns: ["crz_entries"],
-                        group_by: ["month_year"],
-                        split_by: ["detection_region"],
-                        sort: [["month_year", "asc"]],
-                        aggregates: {
-                            crz_entries: "sum"
-                        }
-                    });
-                } else {
-                    // Fallback to stacked bar if month data not available
-                    await viewer.restore({
-                        plugin: "Y Bar",
-                        columns: ["crz_entries"],
-                        group_by: ["detection_region"],
-                        split_by: ["vehicle_class"],
-                        aggregates: {
-                            crz_entries: "sum"
-                        }
-                    });
-                    statusIndicator.textContent = 'Monthly view not available in pre-aggregated data';
-                    statusIndicator.style.color = '#fd7e14';
-                }
-                
-                return true;
-            } catch (error) {
-                console.error('Error applying monthly view:', error);
-                statusIndicator.textContent = 'Error';
-                statusIndicator.style.color = '#dc3545';
-                return false;
-            }
-        }
-        
-        // Apply filters
-        async function applyFilters() {
-            statusIndicator.textContent = 'Applying filters...';
-            statusIndicator.style.color = '#fd7e14';
-            
-            let filters = {};
-            
-            // Region filter
-            const region = regionFilter.value;
-            if (region !== 'all') {
-                filters['detection_region'] = [region];
-            }
-            
-            // Vehicle class filter
-            const vehicle = vehicleFilter.value;
-            if (vehicle !== 'all') {
-                filters['vehicle_class'] = [vehicle];
-            }
-            
-            try {
-                console.time('apply-filters');
-                
-                await viewer.restore({
-                    filter: Object.keys(filters).length > 0 ? filters : []
-                });
-                
-                console.timeEnd('apply-filters');
-                
-                // Update statistics
-                updateStats();
-                
-                statusIndicator.textContent = 'Ready';
-                statusIndicator.style.color = '#28a745';
-            } catch (error) {
-                console.error('Error applying filters:', error);
-                statusIndicator.textContent = 'Error';
-                statusIndicator.style.color = '#dc3545';
-            }
-        }
-        
-        // Update statistics
-        async function updateStats() {
-            try {
-                console.time('update-stats');
-                
-                const view = await table.view();
-                const stats = await view.to_columns();
-                
-                // Calculate average hourly traffic
-                const totalEntries = stats.crz_entries ? stats.crz_entries.reduce((sum, val) => sum + val, 0) : 0;
-                const hourlyAvg = Math.round(totalEntries / 24);
-                
-                // Update stat display
-                avgHourly.textContent = hourlyAvg.toLocaleString();
-                
-                // Clean up view
-                view.delete();
-                
-                console.timeEnd('update-stats');
-            } catch (error) {
-                console.error('Error updating stats:', error);
-            }
-        }
-        
-        // Start the dashboard
-        initDashboard();
-        
-        // Function to update the last updated timestamp
-        function updateLastUpdatedTime() {
-            const now = new Date();
-            const timeString = now.toLocaleTimeString();
-            document.getElementById('last-updated').textContent = `Last update: ${timeString}`;
-            console.debug(`[Metrics] Last updated timestamp set to: ${timeString}`);
-        }
-        
-        // Start live metrics streaming after dashboard is ready
-        setTimeout(() => {
-            console.debug('[Metrics] Initializing live metrics stream');
-            fetchLiveMetrics();
-            console.log('Live metrics streaming started');
-            updateLastUpdatedTime();
-        }, 2000); // Give the main dashboard 2 seconds to load first
-        
-        // Add event listener for live toggle
-        document.getElementById('liveToggle').addEventListener('change', function() {
-            if (this.checked) {
-                console.debug('[Metrics] Live updates enabled by user');
-                // Immediately fetch metrics if toggled on
-                fetchLiveMetrics();
-                const liveIndicator = document.querySelector('.badge');
+    }
+
+    function handleLiveToggle() {
+        const liveToggle = document.getElementById('liveToggle');
+        const liveIndicator = document.querySelector('.badge');
+        if (liveToggle.checked) {
+            console.debug('[Metrics] Live updates enabled by user');
+            startLiveMetrics(); // Start/restart the interval
+            fetchLiveMetrics(); // Fetch immediately
+            if (liveIndicator) {
                 liveIndicator.className = 'badge bg-success me-1';
                 liveIndicator.textContent = 'LIVE';
-            } else {
-                console.debug('[Metrics] Live updates disabled by user');
-                // Update indicator when toggled off
-                const liveIndicator = document.querySelector('.badge');
+            }
+        } else {
+            console.debug('[Metrics] Live updates disabled by user');
+            stopLiveMetrics(); // Stop the interval
+            if (liveIndicator) {
                 liveIndicator.className = 'badge bg-secondary me-1';
                 liveIndicator.textContent = 'PAUSED';
             }
-        });
+        }
+        updateDebugPanelAutoRefresh();
+    }
+
+    function startLiveMetrics() {
+        if (metricsIntervalId === null) {
+            console.debug('[Metrics] Starting live metrics interval');
+            metricsIntervalId = setInterval(fetchLiveMetrics, METRICS_REFRESH_INTERVAL);
+        } else {
+            console.debug('[Metrics] Live metrics interval already running');
+        }
+    }
+
+    function stopLiveMetrics() {
+        if (metricsIntervalId !== null) {
+            console.debug('[Metrics] Stopping live metrics interval');
+            clearInterval(metricsIntervalId);
+            metricsIntervalId = null;
+        }
+    }
+    
+    // Set active view button
+    function setActiveView(view) {
+        currentView = view;
+        [hourlyView, dailyView, monthlyView].forEach(btn => btn.classList.remove('active'));
+        document.getElementById(`${view}-view`).classList.add('active');
+    }
+    
+    // Apply perspective view configurations
+    async function applyViewConfiguration(config, viewName) {
+        statusIndicator.textContent = `Applying ${viewName} view...`;
+        statusIndicator.style.color = '#fd7e14';
+        try {
+            console.time(`apply-${viewName}-view`);
+            await viewer.restore(config);
+            console.timeEnd(`apply-${viewName}-view`);
+            statusIndicator.textContent = 'Ready';
+            statusIndicator.style.color = '#28a745';
+            return true;
+        } catch (error) {
+            console.error(`Error applying ${viewName} view:`, error);
+            statusIndicator.textContent = 'Error applying view';
+            statusIndicator.style.color = '#dc3545';
+            return false;
+        }
+    }
+
+    async function applyHourlyView() {
+        return applyViewConfiguration({
+            plugin: "Y Bar",
+            columns: ["crz_entries"],
+            group_by: ["detection_region", "hour_of_day"],
+            split_by: ["vehicle_class"],
+            sort: [["hour_of_day", "asc"]],
+            aggregates: { crz_entries: "sum" }
+        }, 'hourly');
+    }
+    
+    async function applyDailyView() {
+        const hasDayOfWeek = aggData.length > 0 && 'day_of_week' in aggData[0];
+        if (hasDayOfWeek) {
+            return applyViewConfiguration({
+                plugin: "Y Bar",
+                columns: ["crz_entries"],
+                group_by: ["detection_region", "day_of_week"],
+                split_by: ["vehicle_class"],
+                sort: [["day_of_week_int", "asc"]],
+                aggregates: { crz_entries: "sum" }
+            }, 'daily');
+        } else {
+            console.warn('Daily view (day_of_week) not available in pre-aggregated data. Falling back.');
+            statusIndicator.textContent = 'Daily data not pre-aggregated';
+            statusIndicator.style.color = '#fd7e14'; // Warning color
+            // Fallback view (optional, e.g., show hourly again or a message)
+            return applyViewConfiguration({
+                 plugin: "Treemap", 
+                 columns: ["crz_entries"], 
+                 group_by: ["detection_region", "vehicle_class"], 
+                 aggregates: { crz_entries: "sum" } 
+            }, 'daily-fallback');
+        }
+    }
+    
+    async function applyMonthlyView() {
+        const hasMonthYear = aggData.length > 0 && 'month_year' in aggData[0];
+        if (hasMonthYear) {
+            return applyViewConfiguration({
+                plugin: "X/Y Line",
+                columns: ["crz_entries"],
+                group_by: ["month_year"],
+                split_by: ["detection_region"],
+                sort: [["month_year", "asc"]],
+                aggregates: { crz_entries: "sum" }
+            }, 'monthly');
+        } else {
+            console.warn('Monthly view (month_year) not available in pre-aggregated data. Falling back.');
+            statusIndicator.textContent = 'Monthly data not pre-aggregated';
+            statusIndicator.style.color = '#fd7e14';
+            return applyViewConfiguration({
+                plugin: "Y Bar", 
+                columns: ["crz_entries"], 
+                group_by: ["detection_region"], 
+                split_by: ["vehicle_class"], 
+                aggregates: { crz_entries: "sum" } 
+            }, 'monthly-fallback');
+        }
+    }
+    
+    // Apply filters
+    async function applyFilters() {
+        statusIndicator.textContent = 'Applying filters...';
+        statusIndicator.style.color = '#fd7e14';
         
-        console.debug('[Metrics] Debug mode enabled for metrics module');
+        let filters = [];
+        const region = regionFilter.value;
+        if (region !== 'all') {
+            filters.push(["detection_region", "==", region]);
+        }
+        const vehicle = vehicleFilter.value;
+        if (vehicle !== 'all') {
+            filters.push(["vehicle_class", "==", vehicle]);
+        }
         
-        // Create a debug button in the header if in development mode
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        try {
+            console.time('apply-filters');
+            await viewer.restore({ filter: filters });
+            console.timeEnd('apply-filters');
+            updateStats(); // Update stats based on filtered view
+            statusIndicator.textContent = 'Ready';
+            statusIndicator.style.color = '#28a745';
+        } catch (error) {
+            console.error('Error applying filters:', error);
+            statusIndicator.textContent = 'Error applying filters';
+            statusIndicator.style.color = '#dc3545';
+        }
+    }
+    
+    // Update statistics based on the current view
+    async function updateStats() {
+        if (!table) return; // Don't run if table isn't ready
+        try {
+            console.time('update-stats');
+            const view = await viewer.view(); // Use viewer's current view
+            const statsData = await view.to_columns();
+            
+            // Calculate total based on the *current filtered view*
+            const currentTotalEntries = statsData.crz_entries ? statsData.crz_entries.reduce((sum, val) => sum + (val || 0), 0) : 0;
+            const hourlyAvg = Math.round(currentTotalEntries / 24);
+            
+            avgHourly.textContent = hourlyAvg.toLocaleString();
+            
+            view.delete();
+            console.timeEnd('update-stats');
+        } catch (error) {
+            // Avoid spamming console if view isn't ready during filtering
+            if (!error.message.includes('view is not initialized')) {
+                console.error('Error updating stats:', error);
+            } 
+        }
+    }
+    
+    // Function to update the last updated timestamp
+    function updateLastUpdatedTime() {
+        const now = new Date();
+        const timeString = now.toLocaleTimeString();
+        document.getElementById('last-updated').textContent = `Last update: ${timeString}`;
+        console.debug(`[Metrics] Last updated timestamp set to: ${timeString}`);
+    }
+    
+    // --- Debug Panel Functionality ---
+    function setupDebugFeatures() {
+         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
             console.debug('[Metrics] Development environment detected, adding debug controls');
-            const debugButton = document.createElement('button');
-            debugButton.className = 'btn btn-sm btn-outline-light ms-3';
-            debugButton.textContent = 'Trigger Metrics Update';
-            debugButton.addEventListener('click', () => {
-                console.debug('[Metrics] Manual update triggered');
-                fetchLiveMetrics();
-            });
-            
-            const debugPanelButton = document.createElement('button');
-            debugPanelButton.className = 'btn btn-sm btn-warning ms-2';
-            debugPanelButton.textContent = 'Debug Panel';
-            debugPanelButton.addEventListener('click', toggleDebugPanel);
-            
-            document.querySelector('#header h4').appendChild(debugButton);
-            document.querySelector('#header h4').appendChild(debugPanelButton);
-            
-            // Create debug panel element
-            const panel = document.createElement('div');
-            panel.id = 'debug-panel';
-            panel.innerHTML = `
-                <div id="debug-panel-header">
-                    <span>Metrics Debug Panel</span>
-                    <span id="debug-panel-close">×</span>
-                </div>
-                <div class="debug-metrics">
-                    <div class="debug-metric-label">API Endpoint:</div>
-                    <div class="debug-metric-value">${API_ENDPOINT}</div>
-                    <div class="debug-metric-label">Refresh Interval:</div>
-                    <div class="debug-metric-value">${METRICS_REFRESH_INTERVAL}ms</div>
-                    <div class="debug-metric-label">Auto Refresh:</div>
-                    <div class="debug-metric-value" id="debug-auto-refresh">Enabled</div>
-                    <div class="debug-metric-label">Last API Call:</div>
-                    <div class="debug-metric-value" id="debug-last-call">Never</div>
-                    <div class="debug-metric-label">Last Response Time:</div>
-                    <div class="debug-metric-value" id="debug-response-time">-</div>
-                    <div class="debug-metric-label">Records Fetched:</div>
-                    <div class="debug-metric-value" id="debug-records-count">0</div>
-                </div>
-                <div id="debug-panel-log"></div>
-            `;
-            document.body.appendChild(panel);
-            
-            // Add close button handler
-            document.getElementById('debug-panel-close').addEventListener('click', toggleDebugPanel);
-            
-            // Override console.debug to capture metrics logs
-            const originalDebug = console.debug;
-            console.debug = function() {
-                // Call original console.debug
-                originalDebug.apply(console, arguments);
-                
-                // Only log metrics-related messages
-                const message = Array.from(arguments).join(' ');
-                if (message.includes('[Metrics]')) {
-                    addDebugEntry(message);
-                    
-                    // Update last API call if API fetch mentioned
-                    if (message.includes('Fetching data from API')) {
-                        document.getElementById('debug-last-call').textContent = new Date().toLocaleTimeString();
-                    }
-                    
-                    // Update auto refresh status if toggle changes
-                    if (message.includes('Live updates disabled')) {
-                        document.getElementById('debug-auto-refresh').textContent = 'Disabled';
-                        document.getElementById('debug-auto-refresh').style.color = '#ff6b6b';
-                    } else if (message.includes('Live updates enabled')) {
-                        document.getElementById('debug-auto-refresh').textContent = 'Enabled';
-                        document.getElementById('debug-auto-refresh').style.color = '#00ffff';
-                    }
-                }
-            };
-            
-            console.debug('[Metrics] Debug panel created');
-        }
+            addDebugButtons();
+            initializeDebugPanel();
+            overrideConsoleDebug();
+            console.debug('[Metrics] Debug panel initialized and console overridden.');
+         } else {
+             // Ensure debug panel is hidden in production
+             if(debugPanel) debugPanel.style.display = 'none';
+         }
+    }
+
+    function addDebugButtons() {
+        const headerTarget = document.querySelector('#header h4');
+        if (!headerTarget) return;
+
+        const debugButton = document.createElement('button');
+        debugButton.id = 'manual-metrics-trigger';
+        debugButton.className = 'btn btn-sm btn-outline-light ms-3';
+        debugButton.textContent = 'Trigger Update';
         
-        // Toggle debug panel visibility
-        function toggleDebugPanel() {
-            const panel = document.getElementById('debug-panel');
-            if (!panel) return;
-            
-            if (panel.style.display === 'none' || !panel.style.display) {
-                panel.style.display = 'block';
-                console.debug('[Metrics] Debug panel opened');
-            } else {
-                panel.style.display = 'none';
-                console.debug('[Metrics] Debug panel closed');
-            }
-        }
+        const debugPanelButton = document.createElement('button');
+        debugPanelButton.id = 'toggle-debug-panel';
+        debugPanelButton.className = 'btn btn-sm btn-warning ms-2';
+        debugPanelButton.textContent = 'Debug Panel';
         
-        // Add entry to debug panel log
-        function addDebugEntry(message) {
-            const logPanel = document.getElementById('debug-panel-log');
-            if (!logPanel) return;
-            
-            const entry = document.createElement('div');
-            entry.className = 'debug-entry';
-            
-            const timestamp = document.createElement('span');
-            timestamp.className = 'debug-timestamp';
-            timestamp.textContent = new Date().toLocaleTimeString() + ' ';
-            
-            const messageSpan = document.createElement('span');
-            messageSpan.className = 'debug-message';
-            messageSpan.textContent = message;
-            
-            entry.appendChild(timestamp);
-            entry.appendChild(messageSpan);
-            logPanel.appendChild(entry);
-            
-            // Auto-scroll to bottom
-            logPanel.scrollTop = logPanel.scrollHeight;
-            
-            // Limit entries to keep performance
-            if (logPanel.children.length > 50) {
-                logPanel.removeChild(logPanel.children[0]);
-            }
+        headerTarget.appendChild(debugButton);
+        headerTarget.appendChild(debugPanelButton);
+    }
+
+    function initializeDebugPanel() {
+        if (!debugPanel) return;
+        // Populate initial static values
+        document.getElementById('debug-api-endpoint').textContent = API_ENDPOINT;
+        document.getElementById('debug-refresh-interval').textContent = `${METRICS_REFRESH_INTERVAL}ms`;
+        updateDebugPanelAutoRefresh(); // Set initial toggle state
+    }
+
+    function toggleDebugPanel() {
+        if (!debugPanel) return;
+        const isHidden = debugPanel.style.display === 'none' || !debugPanel.style.display;
+        debugPanel.style.display = isHidden ? 'flex' : 'none'; // Use flex if base style is flex
+        console.debug(`[Metrics] Debug panel ${isHidden ? 'opened' : 'closed'}`);
+    }
+
+    function addDebugEntry(message) {
+        const logPanel = document.getElementById('debug-panel-log');
+        if (!logPanel || !debugPanel || debugPanel.style.display === 'none') return;
+        
+        const entry = document.createElement('div');
+        entry.className = 'debug-entry';
+        
+        const timestamp = document.createElement('span');
+        timestamp.className = 'debug-timestamp';
+        timestamp.textContent = new Date().toLocaleTimeString() + ' '; 
+        
+        const messageSpan = document.createElement('span');
+        messageSpan.className = 'debug-message';
+        // Remove the [Metrics] prefix for cleaner logs in panel
+        messageSpan.textContent = message.replace('[Metrics] ', ''); 
+        
+        entry.appendChild(timestamp);
+        entry.appendChild(messageSpan);
+        logPanel.appendChild(entry);
+        
+        logPanel.scrollTop = logPanel.scrollHeight; // Auto-scroll
+        
+        // Limit entries
+        if (logPanel.children.length > 100) { // Increased limit
+            logPanel.removeChild(logPanel.children[0]);
         }
-    </script>
-</body>
-</html>
+    }
+
+    function updateDebugPanelMetrics(responseTime, recordsCount) {
+        if (!debugPanel || debugPanel.style.display === 'none') return;
+        document.getElementById('debug-last-call').textContent = new Date().toLocaleTimeString();
+        if (responseTime !== undefined) {
+            document.getElementById('debug-response-time').textContent = `${responseTime}ms`;
+        }
+        if (recordsCount !== undefined) {
+            document.getElementById('debug-records-count').textContent = recordsCount;
+        }
+    }
+
+    function updateDebugPanelAutoRefresh() {
+         if (!debugPanel || debugPanel.style.display === 'none') return;
+         const liveToggle = document.getElementById('liveToggle');
+         const statusEl = document.getElementById('debug-auto-refresh');
+         if (liveToggle && statusEl) {
+             statusEl.textContent = liveToggle.checked ? 'Enabled' : 'Disabled';
+             statusEl.style.color = liveToggle.checked ? '#00ffff' : '#ff6b6b';
+         }
+    }
+
+    function overrideConsoleDebug() {
+        const originalDebug = console.debug;
+        console.debug = function() {
+            originalDebug.apply(console, arguments);
+            const message = Array.from(arguments).join(' ');
+            if (message.includes('[Metrics]')) {
+                addDebugEntry(message);
+            }
+        };
+    }
+
+    // --- Initialization --- 
+    setupDebugFeatures(); // Setup debug buttons/panel first
+    initDashboard();    // Then initialize the main dashboard
+    
+</script>
+{% endblock scripts %}
