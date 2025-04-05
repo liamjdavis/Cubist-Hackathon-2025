@@ -55,8 +55,10 @@ graph TD
     %% Frontend connections
     UI --> Map
     UI --> Dashboard
+    UI --> Chart
     Map --> Backend
     Dashboard --> Backend
+    Chart --> Backend
 
     %% Backend connections
     Django --> DataProcessor
